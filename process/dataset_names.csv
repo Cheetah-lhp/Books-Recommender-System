@@ -1,0 +1,10 @@
+type,name
+complete,goodreads_book_works.json.gz
+complete,goodreads_book_authors.json.gz
+complete,goodreads_book_series.json.gz
+complete,goodreads_books.json.gz
+complete,goodreads_book_genres_initial.json.gz
+complete,book_id_map.csv
+complete,user_id_map.csv
+complete,goodreads_interactions.csv
+complete,goodreads_reviews_dedup.json.gz
