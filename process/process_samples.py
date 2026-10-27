@@ -92,6 +92,7 @@ print("Bắt đầu xứ lý cho reviews")
 
 df_reviews = spark.read.json(str(DATA_DIR / 'goodreads_reviews_dedup.json'))
 df_reviews = df_reviews.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
+df_reviews = df_reviews.join(sampled_books, on='book_id')
 df_reviews = df_reviews.join(df_user_id_map, on='user_id').drop('user_id').withColumnRenamed('user_id_csv', 'user_id')
 df_reviews = df_reviews.withColumn('review_text', trim(regexp_replace(col('review_text'), r'[\n\r]+', ' ')))
 
