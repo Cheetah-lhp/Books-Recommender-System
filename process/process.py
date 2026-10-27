@@ -4,7 +4,7 @@ import logging
 from dotenv import load_dotenv
 from pathlib import Path
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, explode, regexp_replace, trim, concat_ws
+from pyspark.sql.functions import col, explode, regexp_replace, trim, concat_ws, lit, create_map
 
 
 load_dotenv()
@@ -92,6 +92,7 @@ logging.info("Đã xử lý xong")
 logging.info("Bắt đầu xử lý goodreads_book_works.json")
 
 df_works = spark.read.json(str(DIR / 'goodreads_book_works.json'))
+df_works = df_works.join(df_book_id_map, df_works['best_book_id'] == df_book_id_map['book_id'], how='left').drop('best_book_id').withColumnRenamed('book_id_csv', 'best_book_id')
 save_to_mysql(df_works, 'works')
 
 logging.info("Đã xử lý xong")
@@ -106,6 +107,11 @@ logging.info("Đã xử lý xong")
 logging.info("Bắt đầu xử lý goodreads_book_genres_initial.json")
 
 df_genres = spark.read.json(str(DIR / 'goodreads_book_genres_initial.json'))
+df_genres = df_genres.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
+
+genre_fields = df_genres.schema['genres'].dataType.fieldNames()
+map_expr = create_map([item for field in genre_fields for item in (lit(field), col(f"genres.{field}"))])
+df_genres = df_genres.withColumn('genres_map', map_expr)
 
 df_genres = df_genres.select(
     col('book_id'),
