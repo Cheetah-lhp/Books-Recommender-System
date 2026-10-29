@@ -84,7 +84,7 @@ save_to_mysql(df_book_authors_map, 'book_authors_map')
 # )
 # save_to_mysql(df_book_shelves_map, 'book_shelves_map')
 
-df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d+)[sm]/', r'\1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
+df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d)[sm]/', r'\1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
 save_to_mysql(df_books, 'books')
 
 logging.info("Đã xử lý xong")
