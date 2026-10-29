@@ -23,7 +23,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: process.env.VITE_API_URL || "https://01a0c9d9-f877-73c4-a505-60067dcbdc6c-8000.eur-1.aiven.app",
+        target: process.env["VITE_API_URL"] || "http://127.0.0.1:8000",
         changeOrigin: true,
       },
     },
@@ -34,7 +34,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: process.env.VITE_API_URL || "https://01a0c9d9-f877-73c4-a505-60067dcbdc6c-8000.eur-1.aiven.app",
+        target: process.env["VITE_API_URL"] || "http://127.0.0.1:8000",
         changeOrigin: true,
       },
     },

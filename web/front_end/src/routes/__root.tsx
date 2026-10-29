@@ -88,6 +88,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
+      { name: "referrer", content: "no-referrer" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Book Recommender System — Discover Your Next Great Read" },
       {

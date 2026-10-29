@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 
-import heroOwl from "@/assets/readora-owl-hero-exact.png.asset.json";
+
 import { AppShell } from "@/components/readora/AppShell";
 import { BookCard, SectionHeader } from "@/components/readora/BookCard";
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,7 @@ function Index() {
           </div>
           <div className="relative flex min-w-0 items-center justify-center md:justify-end">
             <img
-              src={heroOwl.url}
+              src="/chatbot_avatar.png"
               alt="READORA owl mascot reading a glowing book"
               width={1024}
               height={1024}

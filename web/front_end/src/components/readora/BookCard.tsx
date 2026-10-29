@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { BookOpen } from "lucide-react";
 
@@ -6,6 +7,7 @@ import type { Book } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 export function BookCover({ book, className }: { book: Pick<Book, "title" | "cover_url">; className?: string }) {
+  const [hasError, setHasError] = useState(false);
   return (
     <div
       className={cn(
@@ -13,11 +15,13 @@ export function BookCover({ book, className }: { book: Pick<Book, "title" | "cov
         className,
       )}
     >
-      {book.cover_url ? (
+      {book.cover_url && !hasError ? (
         <img
           src={book.cover_url}
           alt={book.title}
           loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setHasError(true)}
           className="h-full w-full object-cover"
         />
       ) : (

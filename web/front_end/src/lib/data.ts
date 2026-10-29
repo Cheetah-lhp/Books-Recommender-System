@@ -4,12 +4,13 @@
  * - User data (reviews, wishlist, cart, orders...): Supabase trực tiếp
  */
 import { queryOptions } from "@tanstack/react-query";
+import { categorySearchTerms } from "@/lib/categories";
 import { supabase } from "@/integrations/supabase/client";
 
 // Base URL của Python API — SSR cần absolute URL, Client dùng proxy /api hoặc trực tiếp
 const BACKEND_URL =
-  (typeof process !== "undefined" ? process.env.VITE_API_URL : undefined) ||
-  "https://01a0c9d9-f877-73c4-a505-60067dcbdc6c-8000.eur-1.aiven.app";
+  (typeof process !== "undefined" ? process.env["VITE_API_URL"] : undefined) ||
+  "http://127.0.0.1:8000";
 
 function getApiUrl(path: string): string {
   const clean = path.startsWith("/") ? path : `/${path}`;
@@ -93,7 +94,7 @@ export const trendingBooksQuery = queryOptions({
       return [];
     }
   },
-  staleTime: 2 * 60 * 1000,
+  staleTime: 5 * 60 * 1000,
 });
 
 export const topRatedQuery = queryOptions({
@@ -124,13 +125,45 @@ export const allBooksQuery = queryOptions({
   staleTime: 5 * 60 * 1000,
 });
 
+export type BookPage = {
+  books: Book[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+};
+
+export function booksPageQuery(page: number, limit = 24) {
+  return queryOptions({
+    queryKey: ["books", "page", page, limit],
+    queryFn: async (): Promise<BookPage> => {
+      const params = new URLSearchParams({ page: String(page), limit: String(limit), sort: "rating" });
+      const result = await apiFetch<{
+        data: Record<string, unknown>[];
+        total: number;
+        page: number;
+        limit: number;
+        pages: number;
+      }>(`/books?${params.toString()}`);
+      return {
+        books: (result.data ?? []).map(normalizeBook),
+        total: result.total,
+        page: result.page,
+        limit: result.limit,
+        pages: result.pages,
+      };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
 export function bookQuery(id: string) {
   return queryOptions({
     queryKey: ["book", id],
     queryFn: async () => {
       const book = await apiFetch<Record<string, unknown>>(`/books/${id}`);
       // Categories lấy từ tags của sách
-      const categories = ((book["tags"] as string[]) ?? []).slice(0, 5).map((tag) => ({
+      const categories = ((book["tags"] as string[]) ?? []).map((tag) => ({
         name: tag,
         slug: tag.toLowerCase().replace(/\s+/g, "-"),
       }));
@@ -143,9 +176,9 @@ export function booksByCategoryQuery(slug: string) {
   return queryOptions({
     queryKey: ["books", "category", slug],
     queryFn: async (): Promise<Book[]> => {
-      const data = await apiFetch<{ data: Record<string, unknown>[] }>(
-        `/books?category=${encodeURIComponent(slug)}&limit=40&sort=rating`
-      );
+      const params = new URLSearchParams({ limit: "40", sort: "rating" });
+      for (const term of categorySearchTerms(slug)) params.append("category", term);
+      const data = await apiFetch<{ data: Record<string, unknown>[] }>(`/books?${params.toString()}`);
       return (data.data ?? []).map(normalizeBook);
     },
     staleTime: 3 * 60 * 1000,
@@ -165,25 +198,46 @@ export function searchQuery(term: string) {
   });
 }
 
-export function similarBooksQuery(bookId: string) {
+export function similarBooksQuery(bookId: string, preferredTags: string[] = []) {
   return queryOptions({
-    queryKey: ["books", "similar", bookId],
+    queryKey: ["books", "similar", bookId, preferredTags],
     queryFn: async (): Promise<Book[]> => {
-      // Lấy thông tin sách hiện tại rồi tìm sách rating cao có cùng tags
       try {
-        const base = await apiFetch<Record<string, unknown>>(`/books/${bookId}`);
-        const tags = (base["tags"] as string[]) ?? [];
-        const firstTag = tags[0];
-        const query = firstTag
-          ? `/books?category=${encodeURIComponent(firstTag)}&limit=8&sort=rating`
-          : `/books/top-rated?limit=8`;
-        const data = await apiFetch<Record<string, unknown>[] | { data: Record<string, unknown>[] }>(query);
-        const raw = Array.isArray(data) ? data : (data as { data: Record<string, unknown>[] }).data ?? [];
-        return raw.filter((b) => String(b["id"]) !== bookId).slice(0, 4).map(normalizeBook);
+        const params = new URLSearchParams({ limit: "8" });
+        const normalizedPreferences = Array.from(
+          new Set(preferredTags.flatMap((tag) => categorySearchTerms(tag))),
+        ).slice(0, 20);
+        for (const tag of normalizedPreferences) params.append("preferred_tags", tag);
+        const data = await apiFetch<Record<string, unknown>[]>(
+          `/books/${encodeURIComponent(bookId)}/similar?${params.toString()}`,
+        );
+        return data.map(normalizeBook);
       } catch {
         return [];
       }
     },
+  });
+}
+
+export type SampleReview = {
+  review_id: string;
+  user_id: number;
+  rating: number;
+  review_text: string | null;
+  date_added: string | null;
+};
+
+export function sampleReviewsQuery(bookId: string) {
+  return queryOptions({
+    queryKey: ["sample-reviews", bookId],
+    queryFn: async (): Promise<SampleReview[]> => {
+      try {
+        return await apiFetch<SampleReview[]>(`/books/${encodeURIComponent(bookId)}/sample-reviews?limit=12`);
+      } catch {
+        return [];
+      }
+    },
+    staleTime: 10 * 60 * 1000,
   });
 }
 

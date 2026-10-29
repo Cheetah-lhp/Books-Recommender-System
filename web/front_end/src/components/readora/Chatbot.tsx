@@ -16,9 +16,15 @@ import { cn } from "@/lib/utils";
 type Msg = { role: "user" | "assistant"; content: string };
 type Turn = Msg & { books?: RecommendedBook[] };
 
-export function Chatbot({ variant = "floating" }: { variant?: "floating" | "inline" }) {
+export function Chatbot({
+  variant = "floating",
+  initiallyOpen = false,
+}: {
+  variant?: "floating" | "inline";
+  initiallyOpen?: boolean;
+}) {
   const { t, lang } = useI18n();
-  const [open, setOpen] = useState(variant === "inline");
+  const [open, setOpen] = useState(variant === "inline" || initiallyOpen);
   const [messages, setMessages] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -147,7 +153,7 @@ export function Chatbot({ variant = "floating" }: { variant?: "floating" | "inli
         className="group h-14 w-14 overflow-hidden rounded-full bg-primary shadow-float ring-2 ring-gold transition-transform hover:scale-105 focus:outline-none focus-visible:ring-4 focus-visible:ring-gold/50"
       >
         <img
-          src={readoraOwl.url}
+          src="/chatbot_avatar.png"
           alt={t("chat.title")}
           width={56}
           height={56}

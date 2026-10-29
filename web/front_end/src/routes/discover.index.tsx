@@ -1,12 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { AppShell } from "@/components/readora/AppShell";
 import { BookCard, SectionHeader } from "@/components/readora/BookCard";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { READORA_CATEGORY_DEFS } from "@/lib/categories";
-import { allBooksQuery, booksByCategoryQuery } from "@/lib/data";
+import { booksByCategoryQuery, booksPageQuery } from "@/lib/data";
 import { useI18n } from "@/lib/i18n";
 import { useRecommendations } from "@/lib/recommendations";
 
@@ -24,11 +25,14 @@ export const Route = createFileRoute("/discover/")({
 
 function DiscoverPage() {
   const { t } = useI18n();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(48);
   const { user } = useAuth();
   const { data: recommended = [] } = useRecommendations(user?.id ?? null);
   const featuredCategory = READORA_CATEGORY_DEFS[0]!;
   const { data: featured = [] } = useQuery(booksByCategoryQuery(featuredCategory.slug));
-  const { data: all = [] } = useQuery(allBooksQuery);
+  const { data: bookPage, isLoading: booksLoading } = useQuery(booksPageQuery(page, pageSize));
+  const all = bookPage?.books ?? [];
 
   return (
     <AppShell>
@@ -54,6 +58,59 @@ function DiscoverPage() {
             <BookCard key={book.id} book={book} />
           ))}
         </div>
+      </section>
+
+      <section className="mt-10">
+        <SectionHeader
+          title="All books"
+          subtitle={bookPage ? `${bookPage.total.toLocaleString()} books in the catalog` : "Browse the full catalog"}
+        />
+        {booksLoading ? (
+          <p className="text-sm text-muted-foreground">Loading books…</p>
+        ) : all.length ? (
+          <>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+              {all.map((book) => <BookCard key={book.id} book={book} />)}
+            </div>
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Per page
+                <select
+                  value={pageSize}
+                  onChange={(event) => {
+                    setPageSize(Number(event.target.value));
+                    setPage(1);
+                  }}
+                  className="h-9 rounded-lg border border-border bg-background px-2 text-foreground"
+                  aria-label="Books per page"
+                >
+                  {[24, 48, 96].map((size) => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={page <= 1 || booksLoading}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {bookPage?.page ?? page} of {bookPage?.pages ?? 1}
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={page >= (bookPage?.pages ?? 1) || booksLoading}
+                onClick={() => setPage((current) => Math.min(bookPage?.pages ?? current, current + 1))}
+              >
+                Next
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">No books found.</p>
+        )}
       </section>
 
       <section className="mt-10">

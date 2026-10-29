@@ -1,14 +1,5 @@
-import logo from "@/assets/readora-logo-official.png.asset.json";
 import { cn } from "@/lib/utils";
 
-/**
- * Logo contexts are INDEPENDENT theme tokens.
- * Each context (header / sidebar / drawer / auth / compact) renders the official
- * READORA logo unmodified on its own dedicated brand plate, whose colors are
- * defined per context in src/styles.css (--logo-plate-* / --logo-ring-*).
- * Changing a header or sidebar background never affects logo visibility, and no
- * CSS filter or recoloring is ever applied to the artwork itself.
- */
 export type LogoContext = "header" | "sidebar" | "drawer" | "auth" | "compact";
 
 const PLATE: Record<LogoContext, string> = {
@@ -28,7 +19,6 @@ function LogoPlate({
   className?: string | undefined;
   imgClassName?: string | undefined;
 }) {
-
   return (
     <span
       className={cn(
@@ -38,22 +28,18 @@ function LogoPlate({
       )}
     >
       <img
-        src={logo.url}
+        src="/readora_logo.png"
         alt="Readora"
-        width={1280}
-        height={853}
         className={cn("w-auto object-contain", imgClassName)}
       />
     </span>
   );
 }
 
-/** Icon/mark-sized lockup — used in collapsed sidebar rails and small surfaces. */
 export function LogoMark({ className, context = "sidebar" }: { className?: string; context?: LogoContext }) {
   return <LogoPlate context={context} imgClassName={cn("h-9", className)} />;
 }
 
-/** Full lockup — header, mobile drawer, auth screens. */
 export function LogoLockup({
   className,
   context = "header",

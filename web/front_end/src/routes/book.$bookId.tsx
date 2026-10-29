@@ -12,8 +12,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { addToCart, fetchUserWishlist, formatPrice, toggleWishlist } from "@/lib/ecommerce";
-import { useWhyThisBook } from "@/lib/recommend";
-import { bookQuery, reviewsQuery, similarBooksQuery, userBooksQuery } from "@/lib/data";
+import { useRecommendationProfile, useWhyThisBook } from "@/lib/recommend";
+import {
+  bookQuery,
+  preferencesQuery,
+  reviewsQuery,
+  sampleReviewsQuery,
+  similarBooksQuery,
+  userBooksQuery,
+} from "@/lib/data";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +44,16 @@ function BookPage() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery(bookQuery(bookId));
   const { data: reviews = [] } = useQuery(reviewsQuery(bookId));
-  const { data: alsoLike = [] } = useQuery(similarBooksQuery(bookId));
+  const { data: sampleReviews = [] } = useQuery(sampleReviewsQuery(bookId));
+  const { data: preferences } = useQuery(preferencesQuery(user?.id ?? null));
+  const { data: recommendationProfile } = useRecommendationProfile(user?.id ?? null);
+  const preferredTags = Array.from(new Set([
+    ...(preferences?.favorite_genres ?? []),
+    ...(recommendationProfile?.genres ?? []),
+  ]));
+  const { data: alsoLike = [] } = useQuery(
+    similarBooksQuery(bookId, preferredTags),
+  );
   const { data: shelf = [] } = useQuery(userBooksQuery(user?.id ?? null));
   const { data: why } = useWhyThisBook(user?.id ?? null, bookId);
   const [rating, setRating] = useState(5);
@@ -199,18 +215,6 @@ function BookPage() {
                   </div>
                 ) : null}
               </dl>
-              {book.tags?.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {book.tags.map((tag) => (
-                    <span
-                      key={tag}
-                      className="rounded-full border border-border px-3 py-1 text-[11px] font-medium text-muted-foreground"
-                    >
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
               {/* E-Commerce Price & Purchasing Section */}
               <div className="mt-6 rounded-2xl border border-gold/30 bg-gold/5 p-4 sm:p-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -411,6 +415,30 @@ function BookPage() {
               </div>
             ))}
           </div>
+
+          {sampleReviews.length ? (
+            <div className="mt-6 border-t border-border pt-4">
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Reader reviews from the sample</h3>
+              <div className="space-y-3">
+                {sampleReviews.map((r) => (
+                  <article key={r.review_id} className="rounded-xl bg-secondary/60 p-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-foreground">Reader #{r.user_id}</p>
+                      <Stars value={r.rating} size={12} />
+                      {r.date_added ? (
+                        <span className="text-[11px] text-muted-foreground">
+                          {new Date(r.date_added).toLocaleDateString()}
+                        </span>
+                      ) : null}
+                    </div>
+                    {r.review_text ? (
+                      <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{r.review_text}</p>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       </div>
     </AppShell>
