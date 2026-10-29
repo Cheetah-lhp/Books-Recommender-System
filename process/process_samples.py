@@ -48,7 +48,7 @@ df_book_authors_map = df_books.select(
     col('authors.role').alias('role')
 )
 
-df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'([sm])/', 'l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
+df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d+)[sm]/', r'\1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
 
 df_book_authors_map.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'book_authors_map'))
 df_books.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'books'))
@@ -80,11 +80,11 @@ df_genres = df_genres.join(sampled_books, on='book_id')
 genre_fields = df_genres.schema['genres'].dataType.fieldNames()
 map_expr = create_map([item for field in genre_fields for item in (lit(field), col(f"genres.{field}"))])
 df_genres = df_genres.withColumn('genres_map', map_expr)
-
 df_genres = df_genres.select(
     col('book_id'),
     explode('genres_map')
-).withColumnRenamed('key', 'genre').withColumnRenamed('value', 'votes')
+).withColumnRenamed('key', 'genres').withColumnRenamed('value', 'votes')
+df_genres = df_genres.filter(col('votes').isNotNull())
 
 df_genres.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'genres'))
 

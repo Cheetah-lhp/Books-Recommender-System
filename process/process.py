@@ -84,7 +84,7 @@ save_to_mysql(df_book_authors_map, 'book_authors_map')
 # )
 # save_to_mysql(df_book_shelves_map, 'book_shelves_map')
 
-df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'([sm])/', 'l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
+df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d+)[sm]/', r'\1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
 save_to_mysql(df_books, 'books')
 
 logging.info("Đã xử lý xong")
@@ -112,11 +112,11 @@ df_genres = df_genres.join(df_book_id_map, on='book_id').drop('book_id').withCol
 genre_fields = df_genres.schema['genres'].dataType.fieldNames()
 map_expr = create_map([item for field in genre_fields for item in (lit(field), col(f"genres.{field}"))])
 df_genres = df_genres.withColumn('genres_map', map_expr)
-
 df_genres = df_genres.select(
     col('book_id'),
-    explode('genres')
-).withColumnRenamed("key", "genre").withColumnRenamed("value", "votes")
+    explode('genres_map')
+).withColumnRenamed('key', 'genres').withColumnRenamed('value', 'votes')
+df_genres = df_genres.filter(col('votes').isNotNull())
 save_to_mysql(df_genres, 'genres')
 
 logging.info("Đã xử lý xong")
