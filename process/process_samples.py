@@ -48,64 +48,64 @@ df_book_authors_map = df_books.select(
     col('authors.role').alias('role')
 )
 
-df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d)[sm]/', r'\1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
+df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d)[sm]/', r'$1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
 
 df_book_authors_map.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'book_authors_map'))
 df_books.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'books'))
 
 print(f"Kích thước mẫu của books: {df_books.count()}")
 
-# print("Bắt đầu lấy mẫu và xử lý cho users và interactions")
+print("Bắt đầu lấy mẫu và xử lý cho users và interactions")
 
-# df_interactions = df_interactions.join(sampled_books, on='book_id')
+df_interactions = df_interactions.join(sampled_books, on='book_id')
 
-# df_interactions.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'interactions'))
+df_interactions.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'interactions'))
 
-# print(f"Kích thước mẫu của users: {df_interactions.select('user_id').distinct().count()}")
-# print(f"Kích thước mẫu của interactions: {df_interactions.count()}")
+print(f"Kích thước mẫu của users: {df_interactions.select('user_id').distinct().count()}")
+print(f"Kích thước mẫu của interactions: {df_interactions.count()}")
 
-# print("Bắt đầu xử lý cho book works")
+print("Bắt đầu xử lý cho book works")
 
-# df_works = spark.read.json(str(DATA_DIR / 'goodreads_book_works.json'))
-# df_works = df_works.join(df_book_id_map, df_works['best_book_id'] == df_book_id_map['book_id']).drop('best_book_id', 'book_id').withColumnRenamed('book_id_csv', 'best_book_id')
+df_works = spark.read.json(str(DATA_DIR / 'goodreads_book_works.json'))
+df_works = df_works.join(df_book_id_map, df_works['best_book_id'] == df_book_id_map['book_id']).drop('best_book_id', 'book_id').withColumnRenamed('book_id_csv', 'best_book_id')
 
-# df_works.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'works'))
+df_works.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'works'))
 
-# print("Bắt đầu xử lý cho book genres")
+print("Bắt đầu xử lý cho book genres")
 
-# df_genres = spark.read.json(str(DATA_DIR / 'goodreads_book_genres_initial.json'))
-# df_genres = df_genres.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
-# df_genres = df_genres.join(sampled_books, on='book_id')
+df_genres = spark.read.json(str(DATA_DIR / 'goodreads_book_genres_initial.json'))
+df_genres = df_genres.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
+df_genres = df_genres.join(sampled_books, on='book_id')
 
-# genre_fields = df_genres.schema['genres'].dataType.fieldNames()
-# map_expr = create_map([item for field in genre_fields for item in (lit(field), col(f"genres.{field}"))])
-# df_genres = df_genres.withColumn('genres_map', map_expr)
-# df_genres = df_genres.select(
-#     col('book_id'),
-#     explode('genres_map')
-# ).withColumnRenamed('key', 'genres').withColumnRenamed('value', 'votes')
-# df_genres = df_genres.filter(col('votes').isNotNull())
+genre_fields = df_genres.schema['genres'].dataType.fieldNames()
+map_expr = create_map([item for field in genre_fields for item in (lit(field), col(f"genres.{field}"))])
+df_genres = df_genres.withColumn('genres_map', map_expr)
+df_genres = df_genres.select(
+    col('book_id'),
+    explode('genres_map')
+).withColumnRenamed('key', 'genres').withColumnRenamed('value', 'votes')
+df_genres = df_genres.filter(col('votes').isNotNull())
 
-# df_genres.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'genres'))
+df_genres.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'genres'))
 
-# print("Bắt đầu xứ lý cho reviews")
+print("Bắt đầu xứ lý cho reviews")
 
-# df_reviews = spark.read.json(str(DATA_DIR / 'goodreads_reviews_dedup.json'))
-# df_reviews = df_reviews.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
-# df_reviews = df_reviews.join(sampled_books, on='book_id')
-# df_reviews = df_reviews.join(df_user_id_map, on='user_id').drop('user_id').withColumnRenamed('user_id_csv', 'user_id')
-# df_reviews = df_reviews.withColumn('review_text', trim(regexp_replace(col('review_text'), r'[\n\r]+', ' ')))
+df_reviews = spark.read.json(str(DATA_DIR / 'goodreads_reviews_dedup.json'))
+df_reviews = df_reviews.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
+df_reviews = df_reviews.join(sampled_books, on='book_id')
+df_reviews = df_reviews.join(df_user_id_map, on='user_id').drop('user_id').withColumnRenamed('user_id_csv', 'user_id')
+df_reviews = df_reviews.withColumn('review_text', trim(regexp_replace(col('review_text'), r'[\n\r]+', ' ')))
 
-# df_reviews.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'reviews'))
+df_reviews.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'reviews'))
 
-# print("Bắt đầu xử lý cho authors")
+print("Bắt đầu xử lý cho authors")
 
-# df_authors = spark.read.json(str(DATA_DIR / 'goodreads_book_authors.json'))
+df_authors = spark.read.json(str(DATA_DIR / 'goodreads_book_authors.json'))
 
-# df_authors.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'authors'))
+df_authors.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'authors'))
 
-# print("Bắt đầu xử lý cho series")
+print("Bắt đầu xử lý cho series")
 
-# df_series = spark.read.json(str(DATA_DIR / 'goodreads_book_series.json'))
+df_series = spark.read.json(str(DATA_DIR / 'goodreads_book_series.json'))
 
-# df_series.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'series'))
+df_series.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'series'))
