@@ -5,6 +5,7 @@
 
 export type CatalogBook = {
   id: string;
+  goodreads_id?: number | null;
   title: string;
   author_name: string;
   description: string | null;
@@ -22,10 +23,7 @@ export type CatalogBook = {
   price?: number;
 };
 
-const API_BASE =
-  process.env["VITE_API_BASE"] ||
-  process.env["API_BASE"] ||
-  "http://localhost:8000";
+const API_BASE = process.env["VITE_API_BASE"] || process.env["API_BASE"] || "http://localhost:8000";
 
 /** Gọi Supabase REST API với access token (dùng cho user-scoped data). */
 export async function rest<T = unknown>(path: string, accessToken?: string): Promise<T[]> {
@@ -46,11 +44,12 @@ export async function fetchCatalog(): Promise<CatalogBook[]> {
   if (cache && Date.now() - cache.at < 60_000) return cache.books;
 
   try {
-    // Lấy tối đa 500 sách có rating cao để dùng cho recommendation engine
-    const res = await fetch(
-      `${API_BASE}/api/books?limit=500&sort=rating`,
-      { signal: AbortSignal.timeout(10_000) }
-    );
+    // Match the catalog API's validated maximum page size.
+    const sort =
+      process.env["READORA_CATALOG_SORT"] === "ratings_count" ? "ratings_count" : "rating";
+    const res = await fetch(`${API_BASE}/api/books?limit=100&sort=${sort}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
     if (!res.ok) return cache?.books ?? [];
 
     const json = (await res.json()) as { data: CatalogBook[] };

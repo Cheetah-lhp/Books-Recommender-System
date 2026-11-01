@@ -1,4 +1,4 @@
 @echo off
-cd /d "%~dp0web"
-call start.bat
+call "%~dp0web\start.bat" %*
+exit /b %errorlevel%
 

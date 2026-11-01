@@ -17,13 +17,45 @@ services:
   pyspark-etl:
     build: process/
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       - ./data:/data
       - ./process/logs:/app/logs
     depends_on:
       mysql:
         condition: service_healthy
+
+  modeling:
+    profiles: ["modeling"]
+    build:
+      context: .
+      dockerfile: modeling/Dockerfile
+    command: ["run-all", "--config", "configs/demo.yaml"]
+    volumes:
+      - ./data:/app/data
+      - ./artifacts:/app/artifacts
+      - ./checkpoints:/app/checkpoints
+      - ./configs:/app/configs:ro
+      - ./samples_data:/app/samples_data:ro
+    environment:
+      - PYSPARK_PYTHON=python
+
+  recommender:
+    profiles: ["modeling"]
+    build:
+      context: .
+      dockerfile: modeling/Dockerfile
+    command: ["serve", "--run-id", "latest", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "127.0.0.1:8001:8001"
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+    environment:
+      - ML_CATALOG_URL=http://host.docker.internal:8000
+      - ML_API_KEY=${ML_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   mysql_data:

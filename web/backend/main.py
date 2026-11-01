@@ -9,6 +9,7 @@ import json
 import queue
 import threading
 import time
+import sqlite3
 from contextlib import asynccontextmanager
 from typing import Optional, List, Literal
 from pathlib import Path
@@ -30,9 +31,9 @@ DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 if DB_HOST == "mysql":
     DB_HOST = "127.0.0.1"
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "Namle123456")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = "goodreads"
-SQLITE_PATH = BASE_DIR / "books.db"
+SQLITE_PATH = Path(os.getenv("BOOKS_SQLITE_PATH", str(BASE_DIR / "books.db")))
 MYSQL_POOL_SIZE = max(1, int(os.getenv("MYSQL_POOL_SIZE", "10")))
 MYSQL_POOL_TIMEOUT_SECONDS = max(1, int(os.getenv("MYSQL_POOL_TIMEOUT_SECONDS", "5")))
 TRENDING_CACHE_TTL_SECONDS = max(0, int(os.getenv("TRENDING_CACHE_TTL_SECONDS", "60")))
@@ -100,17 +101,35 @@ def _get_pooled_mysql_connection():
         raise
 
 
+class SQLiteCursor(sqlite3.Cursor):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+class SQLiteConnection(sqlite3.Connection):
+    def cursor(self, *args, **kwargs):
+        return super().cursor(*args, factory=SQLiteCursor, **kwargs)
+
+
+def _connect_sqlite():
+    conn = sqlite3.connect(str(SQLITE_PATH), factory=SQLiteConnection)
+    conn.row_factory = sqlite3.Row
+    return "sqlite", conn
+
+
 def get_conn():
     """Ket noi MySQL uu tien, fallback sang SQLite neu MySQL khong kha dung."""
+    if os.getenv("DB_ENGINE") == "sqlite":
+        return _connect_sqlite()
     try:
         return "mysql", _get_pooled_mysql_connection()
     except TimeoutError as error:
         raise HTTPException(status_code=503, detail="Database connection pool is busy") from error
     except Exception:
-        import sqlite3
-        conn = sqlite3.connect(str(SQLITE_PATH))
-        conn.row_factory = sqlite3.Row
-        return "sqlite", conn
+        return _connect_sqlite()
 
 
 def format_book(row) -> dict:

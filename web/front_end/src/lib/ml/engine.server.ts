@@ -2,7 +2,7 @@ import { categorySearchTerms, normalizeGenres } from "@/lib/categories";
 import { MOOD_TAGS, THEME_TAGS } from "@/lib/preferences";
 
 import { fetchCatalog, rest, type CatalogBook } from "./catalog.server";
-import { callModel } from "./models.server";
+import { callModelWithStatus } from "./models.server";
 import { analyzeSentiment } from "./sentiment.server";
 import type { ParsedQuery } from "./query.server";
 
@@ -38,6 +38,14 @@ export const EMPTY_SIGNALS: Signals = {
 
 export type Recommendation = { book: CatalogBook; score: number; why: string };
 export type Section = { key: string; title: string; books: Recommendation[] };
+export type ModelReport = {
+  source: "model" | "heuristic";
+  status: "used" | "unconfigured" | "unavailable" | "unmapped";
+  runId: string | null;
+  durationMs: number;
+  candidates: number;
+  returned: number;
+};
 
 /** Collect every available recommendation signal for a user (RLS-scoped read). */
 export async function collectSignals(userId: string, accessToken: string): Promise<Signals> {
@@ -50,12 +58,18 @@ export async function collectSignals(userId: string, accessToken: string): Promi
       preferred_book_length: string | null;
       favorite_books: string[];
     }>(`recommendation_profiles?select=*&user_id=eq.${userId}`, accessToken),
-    rest<{ book_id: string; status: string }>(`user_books?select=book_id,status&user_id=eq.${userId}`, accessToken),
+    rest<{ book_id: string; status: string }>(
+      `user_books?select=book_id,status&user_id=eq.${userId}`,
+      accessToken,
+    ),
     rest<{ book_id: string; rating: number; body: string | null }>(
       `reviews?select=book_id,rating,body&user_id=eq.${userId}`,
       accessToken,
     ),
-    rest<{ book_id: string }>(`not_interested_books?select=book_id&user_id=eq.${userId}`, accessToken),
+    rest<{ book_id: string }>(
+      `not_interested_books?select=book_id&user_id=eq.${userId}`,
+      accessToken,
+    ),
     rest<{ book_id: string; feedback: string }>(
       `recommendation_feedback?select=book_id,feedback&user_id=eq.${userId}`,
       accessToken,
@@ -148,7 +162,9 @@ export function scoreBook(book: CatalogBook, s: Signals, catalog: CatalogBook[])
   }
 
   // Behaviour: books close to titles the reader rated highly or loved.
-  const loved = catalog.filter((b) => s.positiveBookIds.includes(b.id) || s.favoriteBookIds.includes(b.id));
+  const loved = catalog.filter(
+    (b) => s.positiveBookIds.includes(b.id) || s.favoriteBookIds.includes(b.id),
+  );
   for (const fav of loved) {
     if (fav.id === book.id) continue;
     if (fav.author_name === book.author_name) {
@@ -166,7 +182,9 @@ export function scoreBook(book: CatalogBook, s: Signals, catalog: CatalogBook[])
   }
 
   if (s.likedBookIds.length) {
-    const likedTags = new Set(catalog.filter((b) => s.likedBookIds.includes(b.id)).flatMap((b) => lc(b.tags)));
+    const likedTags = new Set(
+      catalog.filter((b) => s.likedBookIds.includes(b.id)).flatMap((b) => lc(b.tags)),
+    );
     const hit = tags.filter((t) => likedTags.has(t)).length;
     if (hit) score += hit;
   }
@@ -191,13 +209,31 @@ export function scoreBook(book: CatalogBook, s: Signals, catalog: CatalogBook[])
 
 function eligible(catalog: CatalogBook[], s: Signals) {
   const read = new Set(s.shelves.filter((x) => x.status === "read").map((x) => x.book_id));
-  const excluded = new Set([...s.hidden, ...s.dislikedBookIds, ...read]);
+  const lowRated = s.ratings.filter((r) => r.rating > 0 && r.rating <= 2).map((r) => r.book_id);
+  const excluded = new Set([
+    ...s.hidden,
+    ...s.dislikedBookIds,
+    ...read,
+    ...lowRated,
+    ...s.favoriteBookIds,
+    ...s.likedBookIds,
+  ]);
   return catalog.filter((b) => !excluded.has(b.id));
 }
 
 /** ML model 1 — recommender. Re-ranks candidates when the service is connected. */
-async function mlRerank(userId: string | null, s: Signals, ranked: Recommendation[]): Promise<Recommendation[]> {
-  const remote = await callModel<{ books?: { id: string; score?: number; reason?: string }[] }>("recommender", {
+async function mlRerank(
+  userId: string | null,
+  s: Signals,
+  ranked: Recommendation[],
+  reportModel?: (report: ModelReport) => void,
+): Promise<Recommendation[]> {
+  const candidates = ranked.slice(0, 60).map((r) => r.book.id);
+  const call = await callModelWithStatus<{
+    books?: { id: string; score?: number; reason?: string; work_id?: string }[];
+    run_id?: string;
+    mapped_candidates?: number;
+  }>("recommender", {
     userId,
     preferences: {
       genres: s.genres,
@@ -210,22 +246,54 @@ async function mlRerank(userId: string | null, s: Signals, ranked: Recommendatio
     history: s.shelves,
     ratings: s.ratings.map((r) => ({ book_id: r.book_id, rating: r.rating })),
     feedback: { liked: s.likedBookIds, disliked: s.dislikedBookIds, hidden: s.hidden },
-    candidates: ranked.slice(0, 60).map((r) => r.book.id),
+    candidates,
   });
-  if (!remote?.books?.length) return ranked;
+  const remote = call.data;
+  if (!Array.isArray(remote?.books) || (!remote.books.length && !remote.mapped_candidates)) {
+    reportModel?.({
+      source: "heuristic",
+      status: call.status === "used" ? "unmapped" : call.status,
+      runId: remote?.run_id ?? null,
+      durationMs: call.durationMs,
+      candidates: candidates.length,
+      returned: 0,
+    });
+    return ranked;
+  }
 
   const byId = new Map(ranked.map((r) => [r.book.id, r]));
   const out: Recommendation[] = [];
+  const works = new Set<string>();
   for (const item of remote.books) {
     const match = byId.get(item.id);
-    if (!match) continue;
-    out.push({ ...match, score: item.score ?? match.score, ...(item.reason ? { why: item.reason } : {}) });
+    const work = item.work_id ?? item.id;
+    if (!match || !candidates.includes(item.id) || works.has(work)) continue;
+    out.push({
+      ...match,
+      score: item.score ?? match.score,
+      ...(item.reason ? { why: item.reason } : {}),
+    });
+    works.add(work);
     byId.delete(item.id);
   }
-  return [...out, ...byId.values()];
+  // A successful model response has already removed seen/hidden works and
+  // duplicate editions. Re-appending its omitted candidates would undo that.
+  reportModel?.({
+    source: "model",
+    status: "used",
+    runId: remote.run_id ?? null,
+    durationMs: call.durationMs,
+    candidates: candidates.length,
+    returned: out.length,
+  });
+  return out;
 }
 
-export async function buildSections(userId: string | null, signals: Signals): Promise<Section[]> {
+export async function buildSections(
+  userId: string | null,
+  signals: Signals,
+  reportModel?: (report: ModelReport) => void,
+): Promise<Section[]> {
   const catalog = await fetchCatalog();
   if (catalog.length === 0) return [];
 
@@ -237,7 +305,7 @@ export async function buildSections(userId: string | null, signals: Signals): Pr
     })
     .sort((a, b) => b.score - a.score);
 
-  ranked = await mlRerank(userId, signals, ranked);
+  ranked = await mlRerank(userId, signals, ranked, reportModel);
 
   const sections: Section[] = [];
   const take = (list: Recommendation[], n = 6) => list.slice(0, n);
@@ -247,16 +315,25 @@ export async function buildSections(userId: string | null, signals: Signals): Pr
   const topGenre = signals.genres[0];
   if (topGenre) {
     const inGenre = ranked.filter((r) =>
-      r.book.categories.concat(r.book.tags ?? []).some((v) => v.toLowerCase().includes(topGenre.toLowerCase())),
+      r.book.categories
+        .concat(r.book.tags ?? [])
+        .some((v) => v.toLowerCase().includes(topGenre.toLowerCase())),
     );
-    if (inGenre.length) sections.push({ key: "genre", title: `Because You Like ${topGenre}`, books: take(inGenre) });
+    if (inGenre.length)
+      sections.push({ key: "genre", title: `Because You Like ${topGenre}`, books: take(inGenre) });
   }
 
   if (signals.positiveBookIds.length) {
     const ratedIds = new Set(signals.positiveBookIds);
-    const basedOnRatings = ranked.filter((r) => /rated highly|same author/.test(r.why) && !ratedIds.has(r.book.id));
+    const basedOnRatings = ranked.filter(
+      (r) => /rated highly|same author/.test(r.why) && !ratedIds.has(r.book.id),
+    );
     if (basedOnRatings.length)
-      sections.push({ key: "ratings", title: "Based on Your Ratings", books: take(basedOnRatings) });
+      sections.push({
+        key: "ratings",
+        title: "Based on Your Ratings",
+        books: take(basedOnRatings),
+      });
   }
 
   const lastRead = signals.shelves.find((x) => x.status === "reading") ?? signals.shelves[0];
@@ -277,7 +354,11 @@ export async function buildSections(userId: string | null, signals: Signals): Pr
       .sort((a, b) => b.overlap - a.overlap)
       .map((x) => x.rec);
     if (similar.length)
-      sections.push({ key: "because-read", title: `Because You Read ${lastBook.title}`, books: take(similar) });
+      sections.push({
+        key: "because-read",
+        title: `Because You Read ${lastBook.title}`,
+        books: take(similar),
+      });
   }
 
   const gems = ranked
@@ -291,19 +372,29 @@ export async function buildSections(userId: string | null, signals: Signals): Pr
         (r) =>
           r.book.trending_rank !== null &&
           signals.genres.some((g) =>
-            r.book.categories.concat(r.book.tags ?? []).some((v) => v.toLowerCase().includes(g.toLowerCase())),
+            r.book.categories
+              .concat(r.book.tags ?? [])
+              .some((v) => v.toLowerCase().includes(g.toLowerCase())),
           ),
       )
       .slice(0, 6);
     if (trending.length)
-      sections.push({ key: "trending-genres", title: "Trending in Your Favorite Genres", books: trending });
+      sections.push({
+        key: "trending-genres",
+        title: "Trending in Your Favorite Genres",
+        books: trending,
+      });
   }
 
   return sections.filter((s) => s.books.length > 0);
 }
 
 /** Natural-language / chatbot driven search over the catalog. */
-export async function searchByIntent(parsed: ParsedQuery, signals: Signals, limit = 8): Promise<Recommendation[]> {
+export async function searchByIntent(
+  parsed: ParsedQuery,
+  signals: Signals,
+  limit = 8,
+): Promise<Recommendation[]> {
   const catalog = await fetchCatalog();
   const queryTags = new Set(parsed.themes.flatMap((t) => THEME_TAGS[t] ?? []));
   const similar = parsed.similarTo
@@ -350,7 +441,9 @@ export async function searchByIntent(parsed: ParsedQuery, signals: Signals, limi
       const text = `${book.title} ${book.author_name} ${book.description ?? ""}`.toLowerCase();
       score += parsed.keywords.filter((k) => text.includes(k)).length * 0.75;
 
-      const why = reasons.length ? `Suggested because ${reasons.slice(0, 2).join(", and ")}.` : base.why;
+      const why = reasons.length
+        ? `Suggested because ${reasons.slice(0, 2).join(", and ")}.`
+        : base.why;
       return { book, score, why };
     })
     .sort((a, b) => b.score - a.score)

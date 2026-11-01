@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 
 /** Routes where we never force the questionnaire. */
-const EXEMPT = ["/recommend", "/login", "/signup"];
+const EXEMPT = ["/recommend", "/login", "/signup", "/demo"];
 
 /**
  * After ANY authenticated session appears (first login, email-confirmation
@@ -32,7 +32,8 @@ export function OnboardingGate() {
         .eq("user_id", user.id)
         .maybeSingle();
       if (cancelled || error) return;
-      const done = (data as { onboarding_completed?: boolean } | null)?.onboarding_completed === true;
+      const done =
+        (data as { onboarding_completed?: boolean } | null)?.onboarding_completed === true;
       if (!done) void navigate({ to: "/recommend", replace: true });
     })();
 

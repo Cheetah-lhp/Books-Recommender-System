@@ -39,9 +39,20 @@ export function modelStatus() {
 }
 
 /** POST a payload to a configured model service. Returns null when unavailable. */
-export async function callModel<T>(key: MlModelKey, payload: unknown, timeoutMs = 8000): Promise<T | null> {
+export type ModelCall<T> = {
+  data: T | null;
+  status: "used" | "unconfigured" | "unavailable";
+  durationMs: number;
+};
+
+export async function callModelWithStatus<T>(
+  key: MlModelKey,
+  payload: unknown,
+  timeoutMs = 8000,
+): Promise<ModelCall<T>> {
   const url = modelUrl(key);
-  if (!url) return null;
+  if (!url) return { data: null, status: "unconfigured", durationMs: 0 };
+  const started = performance.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -54,11 +65,24 @@ export async function callModel<T>(key: MlModelKey, payload: unknown, timeoutMs 
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
+    if (!res.ok)
+      return { data: null, status: "unavailable", durationMs: performance.now() - started };
+    return {
+      data: (await res.json()) as T,
+      status: "used",
+      durationMs: performance.now() - started,
+    };
   } catch {
-    return null;
+    return { data: null, status: "unavailable", durationMs: performance.now() - started };
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function callModel<T>(
+  key: MlModelKey,
+  payload: unknown,
+  timeoutMs = 8000,
+): Promise<T | null> {
+  return (await callModelWithStatus<T>(key, payload, timeoutMs)).data;
 }

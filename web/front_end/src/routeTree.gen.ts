@@ -15,6 +15,7 @@ import { Route as CartRouteImport } from './routes/cart'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CommunityRouteImport } from './routes/community'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -58,6 +59,11 @@ const CheckoutRoute = CheckoutRouteImport.update({
 const CommunityRoute = CommunityRouteImport.update({
   id: '/community',
   path: '/community',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -138,6 +144,7 @@ export interface FileRoutesByFullPath {
   '/chat': typeof ChatRoute
   '/checkout': typeof CheckoutRoute
   '/community': typeof CommunityRoute
+  '/demo': typeof DemoRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/profile': typeof ProfileRoute
@@ -160,6 +167,7 @@ export interface FileRoutesByTo {
   '/chat': typeof ChatRoute
   '/checkout': typeof CheckoutRoute
   '/community': typeof CommunityRoute
+  '/demo': typeof DemoRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/profile': typeof ProfileRoute
@@ -183,6 +191,7 @@ export interface FileRoutesById {
   '/chat': typeof ChatRoute
   '/checkout': typeof CheckoutRoute
   '/community': typeof CommunityRoute
+  '/demo': typeof DemoRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/profile': typeof ProfileRoute
@@ -207,6 +216,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/checkout'
     | '/community'
+    | '/demo'
     | '/login'
     | '/orders'
     | '/profile'
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/checkout'
     | '/community'
+    | '/demo'
     | '/login'
     | '/orders'
     | '/profile'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/checkout'
     | '/community'
+    | '/demo'
     | '/login'
     | '/orders'
     | '/profile'
@@ -274,6 +286,7 @@ export interface RootRouteChildren {
   ChatRoute: typeof ChatRoute
   CheckoutRoute: typeof CheckoutRoute
   CommunityRoute: typeof CommunityRoute
+  DemoRoute: typeof DemoRoute
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
   ProfileRoute: typeof ProfileRoute
@@ -332,6 +345,13 @@ declare module '@tanstack/react-router' {
       path: '/community'
       fullPath: '/community'
       preLoaderRoute: typeof CommunityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -442,6 +462,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRoute,
   CheckoutRoute: CheckoutRoute,
   CommunityRoute: CommunityRoute,
+  DemoRoute: DemoRoute,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
   ProfileRoute: ProfileRoute,

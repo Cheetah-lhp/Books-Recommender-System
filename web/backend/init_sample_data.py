@@ -19,13 +19,18 @@ DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
 if DB_HOST == "mysql":
     DB_HOST = "127.0.0.1"
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "Namle123456")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = "goodreads"
-SQLITE_PATH = BASE_DIR / "books.db"
+SQLITE_PATH = Path(os.getenv("BOOKS_SQLITE_PATH", str(BASE_DIR / "books.db")))
 
 
 def get_db_connection():
     """Ket noi MySQL uu tien, fallback sang SQLite neu MySQL khong kha dung."""
+    if os.getenv("DB_ENGINE") == "sqlite":
+        import sqlite3
+        conn = sqlite3.connect(str(SQLITE_PATH))
+        conn.row_factory = sqlite3.Row
+        return "sqlite", conn
     try:
         import pymysql
         conn = pymysql.connect(
@@ -208,6 +213,52 @@ def repair_genre_mappings(db_type, conn, sample_dir):
         cur.close()
 
 
+def refresh_sample_covers(db_type, conn, sample_dir):
+    """Refresh cover URLs from upstream Parquet without changing database IDs."""
+    books_path = sample_dir / "books"
+    if not books_path.exists():
+        return 0
+
+    import pandas as pd
+
+    source = pd.read_parquet(books_path, columns=["book_id", "image_url"])
+    source = source.dropna(subset=["book_id", "image_url"]).drop_duplicates("book_id")
+    covers = {
+        int(book_id): str(url).strip()
+        for book_id, url in source.itertuples(index=False, name=None)
+        if str(url).strip()
+    }
+    book_ids = list(covers)
+    placeholder = "%s" if db_type == "mysql" else "?"
+    cursor = conn.cursor()
+    changes = []
+    try:
+        # Bound the lookup size for SQLite and avoid reading an entire full DB.
+        for offset in range(0, len(book_ids), 500):
+            batch = book_ids[offset:offset + 500]
+            slots = ",".join([placeholder] * len(batch))
+            cursor.execute(
+                f"SELECT goodreads_id, cover_url FROM books WHERE goodreads_id IN ({slots})",
+                batch,
+            )
+            for book_id, previous in cursor.fetchall():
+                if (previous or "") != covers[int(book_id)]:
+                    changes.append((covers[int(book_id)], int(book_id)))
+        if changes:
+            cursor.executemany(
+                f"UPDATE books SET cover_url={placeholder} WHERE goodreads_id={placeholder}",
+                changes,
+            )
+            conn.commit()
+            print(f"[Init Data] Da dong bo URL anh bia cho {len(changes)} sach tu Parquet.")
+        return len(changes)
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+
+
 def import_samples():
     """Nap du lieu tu samples_data vao CSDL neu chua co."""
     db_type, conn = get_db_connection()
@@ -216,6 +267,7 @@ def import_samples():
     current_count = check_existing_data(db_type, conn)
     if current_count > 0:
         sample_dir = PROJECT_DIR / "samples_data"
+        refresh_sample_covers(db_type, conn, sample_dir)
         repair_genre_mappings(db_type, conn, sample_dir)
         print(f"[Init Data] CSDL ({db_type.upper()}) da co san {current_count} cuon sach. Bo qua nap moi.")
         conn.close()
