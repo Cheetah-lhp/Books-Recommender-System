@@ -1,12 +1,30 @@
+import requests
 from pathlib import Path
+from itertools import chain
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import count, col, when, rand, row_number, explode, regexp_replace, trim, concat_ws, lit, create_map
+from pyspark.sql.types import StringType
+from pyspark.sql.functions import udf, count, col, when, rand, row_number, explode, regexp_replace, trim, concat_ws, lit, create_map, coalesce
 
 
 DIR = Path(__file__).parent.parent
 DATA_DIR = DIR / 'data'
 OUTPUT_DIR = DIR / 'samples_data'
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def replace_image_url(isbn, size='L'):
+    url = f'https://covers.openlibrary.org/b/isbn/{isbn}-{size}.jpg'
+    response = requests.get(url)
+
+    try:
+        if response.status_code == 200 and len(response.content) > 1000:
+            return url
+
+    except:
+        pass
+
+    return None
+
+fetch_image_url_udf = udf(replace_image_url, StringType())
 
 spark = SparkSession.builder \
     .appName("SampleGoodreads") \
@@ -49,6 +67,61 @@ df_book_authors_map = df_books.select(
 )
 
 df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d)[sm]/', r'$1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
+df_books = df_books.withColumn(
+    'image_url',
+    when(
+        col('image_url').contains('/nophoto/'),
+        coalesce(fetch_image_url_udf(col('isbn')), col('image_url'))
+    ).otherwise(col('image_url'))
+)
+
+mapping_dict = {
+    # Tiếng Anh
+    'eng': 'en',    # Tiếng Anh (chuẩn ISO 639-2)
+    'en-US': 'en',  # Tiếng Anh (Mỹ)
+    'en-GB': 'en',  # Tiếng Anh (Anh)
+    'en-CA': 'en',  # Tiếng Anh (Canada)
+    'en-IN': 'en',  # Tiếng Anh (Ấn Độ)
+    
+    # Tiếng Pháp
+    'fre': 'fr',    # Tiếng Pháp (chuẩn ISO 639-2/B)
+    
+    # Tiếng Tây Ban Nha
+    'spa': 'es',    # Tiếng Tây Ban Nha
+    'es-MX': 'es',  # Tiếng Tây Ban Nha (Mexico)
+    
+    # Tiếng Đức
+    'ger': 'de',    # Tiếng Đức (chuẩn ISO 639-2/B)
+    
+    # Tiếng Ý
+    'ita': 'it',    # Tiếng Ý
+    
+    # Tiếng Bồ Đào Nha
+    'por': 'pt',    # Tiếng Bồ Đào Nha
+    'pt-BR': 'pt',  # Tiếng Bồ Đào Nha (Brazil)
+    
+    # Tiếng Hà Lan
+    'dut': 'nl',    # Tiếng Hà Lan (chuẩn ISO 639-2/B)
+    'nld': 'nl',    # Tiếng Hà Lan (chuẩn ISO 639-2/T)
+    
+    # Tiếng Ba Tư (Farsi)
+    'per': 'fa',    # Tiếng Ba Tư (chuẩn ISO 639-2/B)
+    'pes': 'fa',    # Tiếng Ba Tư Tây (Iranian Persian)
+    
+    # Tiếng Trung
+    'zho': 'zh',    # Tiếng Trung (chuẩn ISO 639-2/T)
+    'chi': 'zh',    # Tiếng Trung (chuẩn ISO 639-2/B)
+}
+
+map_expr = create_map(lit(x) for x in chain(*mapping_dict.items()))
+
+df_books = df_books.withColumn(
+    'language_code',
+    when(
+        (col('language_code').isNull()) | (trim(col('language_code')).isin("", "--", "Select...", "und")),
+        'unknown'
+    ).otherwise(coalesce(map_expr[col('language_code')], col('language_code')))
+)
 
 df_book_authors_map.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'book_authors_map'))
 df_books.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'books'))
