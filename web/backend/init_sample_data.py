@@ -209,17 +209,32 @@ def repair_genre_mappings(db_type, conn, sample_dir):
 
 
 def import_samples():
-    """Nap du lieu tu samples_data vao CSDL neu chua co."""
+    """Nap du lieu tu samples_data vao CSDL neu chua co hoac khi co co --force."""
     db_type, conn = get_db_connection()
     init_schema(db_type, conn)
 
+    force = "--force" in sys.argv or "-f" in sys.argv
     current_count = check_existing_data(db_type, conn)
-    if current_count > 0:
+    if current_count > 0 and not force:
         sample_dir = PROJECT_DIR / "samples_data"
         repair_genre_mappings(db_type, conn, sample_dir)
         print(f"[Init Data] CSDL ({db_type.upper()}) da co san {current_count} cuon sach. Bo qua nap moi.")
         conn.close()
         return
+
+    if current_count > 0 and force:
+        print(f"[Init Data] Che do nap lai (--force): Dang xoa {current_count} cuon sach cu...")
+        cur = conn.cursor()
+        if db_type == "mysql":
+            cur.execute("SET FOREIGN_KEY_CHECKS = 0;")
+            cur.execute("TRUNCATE TABLE book_categories;")
+            cur.execute("TRUNCATE TABLE books;")
+            cur.execute("SET FOREIGN_KEY_CHECKS = 1;")
+        else:
+            cur.execute("DELETE FROM book_categories;")
+            cur.execute("DELETE FROM books;")
+            conn.commit()
+        cur.close()
 
     sample_dir = PROJECT_DIR / "samples_data"
     if not sample_dir.exists() or not (sample_dir / "books").exists():

@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { AppShell } from "@/components/readora/AppShell";
 import { BookCard, SectionHeader } from "@/components/readora/BookCard";
@@ -27,12 +27,28 @@ function DiscoverPage() {
   const { t } = useI18n();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(48);
+  const allBooksRef = useRef<HTMLElement>(null);
   const { user } = useAuth();
   const { data: recommended = [] } = useRecommendations(user?.id ?? null);
   const featuredCategory = READORA_CATEGORY_DEFS[0]!;
   const { data: featured = [] } = useQuery(booksByCategoryQuery(featuredCategory.slug));
-  const { data: bookPage, isLoading: booksLoading } = useQuery(booksPageQuery(page, pageSize));
+  const {
+    data: bookPage,
+    isLoading: booksLoading,
+    isFetching: booksFetching,
+  } = useQuery({
+    ...booksPageQuery(page, pageSize),
+    placeholderData: keepPreviousData,
+  });
   const all = bookPage?.books ?? [];
+
+  // Cuon ve dau phan All books khi doi trang
+  const handlePageChange = (newPage: number) => {
+    setPage(newPage);
+    requestAnimationFrame(() => {
+      allBooksRef.current?.scrollIntoView({ behavior: "smooth" });
+    });
+  };
 
   return (
     <AppShell>
@@ -60,17 +76,23 @@ function DiscoverPage() {
         </div>
       </section>
 
-      <section className="mt-10">
+      <section ref={allBooksRef} className="mt-10 scroll-mt-20">
         <SectionHeader
           title="All books"
           subtitle={bookPage ? `${bookPage.total.toLocaleString()} books in the catalog` : "Browse the full catalog"}
         />
-        {booksLoading ? (
+        {booksLoading && !bookPage ? (
           <p className="text-sm text-muted-foreground">Loading books…</p>
         ) : all.length ? (
           <>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-              {all.map((book) => <BookCard key={book.id} book={book} />)}
+            <div
+              className={`grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 transition-opacity duration-200 ${
+                booksFetching ? "opacity-60" : "opacity-100"
+              }`}
+            >
+              {all.map((book) => (
+                <BookCard key={book.id} book={book} />
+              ))}
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
               <label className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -79,19 +101,23 @@ function DiscoverPage() {
                   value={pageSize}
                   onChange={(event) => {
                     setPageSize(Number(event.target.value));
-                    setPage(1);
+                    handlePageChange(1);
                   }}
                   className="h-9 rounded-lg border border-border bg-background px-2 text-foreground"
                   aria-label="Books per page"
                 >
-                  {[24, 48, 96].map((size) => <option key={size} value={size}>{size}</option>)}
+                  {[24, 48, 96].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
                 </select>
               </label>
               <Button
                 type="button"
                 variant="outline"
                 disabled={page <= 1 || booksLoading}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                onClick={() => handlePageChange(Math.max(1, page - 1))}
               >
                 Previous
               </Button>
@@ -102,7 +128,7 @@ function DiscoverPage() {
                 type="button"
                 variant="outline"
                 disabled={page >= (bookPage?.pages ?? 1) || booksLoading}
-                onClick={() => setPage((current) => Math.min(bookPage?.pages ?? current, current + 1))}
+                onClick={() => handlePageChange(Math.min(bookPage?.pages ?? page, page + 1))}
               >
                 Next
               </Button>
