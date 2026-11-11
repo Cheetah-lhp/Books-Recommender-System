@@ -1,9 +1,11 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util import Retry
 from pathlib import Path
 from itertools import chain
 from pyspark.sql import SparkSession, Window
 from pyspark.sql.types import StringType
-from pyspark.sql.functions import udf, count, col, when, rand, row_number, explode, regexp_replace, trim, concat_ws, lit, create_map, coalesce
+from pyspark.sql.functions import udf, count, col, when, rand, row_number, explode, regexp_replace, trim, concat_ws, lit, create_map, coalesce, broadcast
 
 
 DIR = Path(__file__).parent.parent
@@ -11,25 +13,37 @@ DATA_DIR = DIR / 'data'
 OUTPUT_DIR = DIR / 'samples_data'
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-def replace_image_url(isbn, size='L'):
-    url = f'https://covers.openlibrary.org/b/isbn/{isbn}-{size}.jpg'
-    response = requests.get(url)
+retry_strategy = Retry(
+    total=5,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=['GET']
+)
 
-    try:
-        if response.status_code == 200 and len(response.content) > 1000:
-            return url
-
-    except:
-        pass
-
-    return None
-
-fetch_image_url_udf = udf(replace_image_url, StringType())
+http_session = requests.Session()
+adapter = HTTPAdapter(max_retries=retry_strategy)
+http_session.mount('https://', adapter)
 
 spark = SparkSession.builder \
     .appName("SampleGoodreads") \
     .config("spark.driver.memory", "4g") \
     .getOrCreate()
+
+def replace_image_url(isbn, isbn13, size='L'):
+    for code in [isbn, isbn13]:
+        if code and str(code).strip():
+            code = str(code).strip()
+            url = f'https://covers.openlibrary.org/b/isbn/{code}-{size}.jpg'
+            try:
+                response = http_session.get(url, timeout=3)
+                if response.status_code == 200 and len(response.content) > 1000:
+                    return url
+            except Exception:
+                pass
+
+    return None
+
+fetch_image_url_udf = udf(replace_image_url, StringType())
 
 df_book_id_map = spark.read.csv(str(DATA_DIR / 'book_id_map.csv'), header=True, inferSchema=True)
 df_user_id_map = spark.read.csv(str(DATA_DIR / 'user_id_map.csv'), header=True, inferSchema=True)
@@ -55,7 +69,7 @@ bucket_window = Window.partitionBy('bucket').orderBy(rand(seed=42))
 df_stratified_sampled = df_book_bucketed.withColumn('rn', row_number().over(bucket_window)).filter(col('rn') <= 1000)
 
 sampled_books = df_stratified_sampled.select('book_id').distinct()
-df_books = df_books.join(sampled_books, on='book_id')
+df_books = df_books.join(broadcast(sampled_books), on='book_id')
 
 df_book_authors_map = df_books.select(
     col('book_id'),
@@ -71,7 +85,10 @@ df_books = df_books.withColumn(
     'image_url',
     when(
         col('image_url').contains('/nophoto/'),
-        coalesce(fetch_image_url_udf(col('isbn')), col('image_url'))
+        coalesce(
+            fetch_image_url_udf(col('isbn'), col('isbn13')),
+            col('image_url')
+        )
     ).otherwise(col('image_url'))
 )
 
@@ -113,7 +130,7 @@ mapping_dict = {
     'chi': 'zh',    # Tiếng Trung (chuẩn ISO 639-2/B)
 }
 
-map_expr = create_map(lit(x) for x in chain(*mapping_dict.items()))
+map_expr = create_map([lit(x) for x in chain(*mapping_dict.items())])
 
 df_books = df_books.withColumn(
     'language_code',
@@ -130,7 +147,7 @@ print(f"Kích thước mẫu của books: {df_books.count()}")
 
 print("Bắt đầu lấy mẫu và xử lý cho users và interactions")
 
-df_interactions = df_interactions.join(sampled_books, on='book_id')
+df_interactions = df_interactions.join(broadcast(sampled_books), on='book_id')
 
 df_interactions.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'interactions'))
 
@@ -148,7 +165,7 @@ print("Bắt đầu xử lý cho book genres")
 
 df_genres = spark.read.json(str(DATA_DIR / 'goodreads_book_genres_initial.json'))
 df_genres = df_genres.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
-df_genres = df_genres.join(sampled_books, on='book_id')
+df_genres = df_genres.join(broadcast(sampled_books), on='book_id')
 
 genre_fields = df_genres.schema['genres'].dataType.fieldNames()
 map_expr = create_map([item for field in genre_fields for item in (lit(field), col(f"genres.{field}"))])
@@ -165,7 +182,7 @@ print("Bắt đầu xứ lý cho reviews")
 
 df_reviews = spark.read.json(str(DATA_DIR / 'goodreads_reviews_dedup.json'))
 df_reviews = df_reviews.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
-df_reviews = df_reviews.join(sampled_books, on='book_id')
+df_reviews = df_reviews.join(broadcast(sampled_books), on='book_id')
 df_reviews = df_reviews.join(df_user_id_map, on='user_id').drop('user_id').withColumnRenamed('user_id_csv', 'user_id')
 df_reviews = df_reviews.withColumn('review_text', trim(regexp_replace(col('review_text'), r'[\n\r]+', ' ')))
 
@@ -182,3 +199,5 @@ print("Bắt đầu xử lý cho series")
 df_series = spark.read.json(str(DATA_DIR / 'goodreads_book_series.json'))
 
 df_series.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'series'))
+
+spark.stop()
