@@ -114,12 +114,30 @@ def similar_books(
     limit: int = Query(8, ge=1, le=24),
     preferred_tags: List[str] = Query(default=[]),
 ):
-    # Goi y cac sach tuong dong dua vao the loai va tag
+    # Uu tien bang book_similarity (offline job); fallback heuristic the loai/tag
     db_type, conn = get_conn()
     try:
         target = repo.get_book_by_id(conn, db_type, book_id)
         if not target:
             raise HTTPException(status_code=404, detail="Book not found")
+
+        precomputed = []
+        try:
+            with conn.cursor() as cur:
+                sql = (
+                    "SELECT similar_book_id FROM book_similarity "
+                    "WHERE book_id = %s ORDER BY score DESC LIMIT %s"
+                    if db_type == "mysql"
+                    else "SELECT similar_book_id FROM book_similarity WHERE book_id = ? ORDER BY score DESC LIMIT ?"
+                )
+                cur.execute(sql, (book_id, limit))
+                precomputed = [r["similar_book_id"] if isinstance(r, dict) else r[0] for r in cur.fetchall()]
+        except Exception:
+            precomputed = []
+
+        if precomputed:
+            rows = repo.get_books_batch(conn, db_type, precomputed)
+            return [Book(**format_book(row)) for row in rows]
 
         book_tags = repo.get_target_book_categories(conn, db_type, target["goodreads_id"])
         def normalize_tag(tag: str) -> str:

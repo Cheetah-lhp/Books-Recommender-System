@@ -2,22 +2,144 @@ services:
   mysql:
     image: mysql:8.0
     environment:
-      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD}
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD:-change-me-db-password}
+      - MYSQL_DATABASE=${WEB_DB_NAME:-goodreads_web}
     command: --innodb_redo_log_capacity=2147483648
     ports:
-      - "3307:3306"
+      - "${MYSQL_PORT:-3307}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_PASSWORD}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p\"$$MYSQL_ROOT_PASSWORD\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./web/backend
+      dockerfile: Dockerfile
+    environment:
+      - RUNNING_IN_DOCKER=1
+      - PORT=8000
+      - WEB_CONCURRENCY=${WEB_CONCURRENCY:-2}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-change-me-db-password}
+      - DB_NAME=${WEB_DB_NAME:-goodreads_web}
+      - MYSQL_POOL_SIZE=${MYSQL_POOL_SIZE:-10}
+      - MYSQL_POOL_TIMEOUT_SECONDS=${MYSQL_POOL_TIMEOUT_SECONDS:-5}
+      - TRENDING_CACHE_TTL_SECONDS=${TRENDING_CACHE_TTL_SECONDS:-60}
+      - JWT_SECRET=${JWT_SECRET:-change-me-jwt-secret-min-32-chars}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - REDIS_ENABLED=${REDIS_ENABLED:-true}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8090,http://localhost:8090}
+      - SAMPLES_DIR=/app/samples_data
+      - SQLITE_PATH=/app/data/books.db
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./samples_data:/app/samples_data:ro
+      - backend_sqlite:/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./web/frontend
+      dockerfile: Dockerfile
+      args:
+        # Same-origin via Nginx in production — leave empty so browser uses relative /api
+        VITE_API_URL: ""
+    environment:
+      - PORT=3000
+      - HOST=0.0.0.0
+      - API_BASE=http://backend:8000
+    ports:
+      - "${DOCKER_FRONTEND_PORT:-3001}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.status<500?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${NGINX_PORT:-8090}:80"
+    volumes:
+      - ./web/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  similarity-worker:
+    build:
+      context: ./web/backend
+      dockerfile: Dockerfile
+    profiles:
+      - ml
+    environment:
+      - RUNNING_IN_DOCKER=1
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-change-me-db-password}
+      - DB_NAME=${WEB_DB_NAME:-goodreads_web}
+    command: ["python", "scripts/compute_similarities.py", "--limit", "5000", "--top-k", "12"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
 
   pyspark-etl:
     build: process/
-    env_file:
-      - .env
+    profiles:
+      - etl
+    environment:
+      - DB_HOST=${DB_HOST:-mysql}
+      - DB_URL=${DB_URL:-jdbc:mysql://mysql:3306/goodreads}
+      - DB_USER=${DB_USER:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-change-me-db-password}
     volumes:
       - ./data:/data
       - ./process/logs:/app/logs
@@ -27,3 +149,4 @@ services:
 
 volumes:
   mysql_data:
+  backend_sqlite:

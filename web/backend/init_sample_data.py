@@ -9,19 +9,25 @@ import json
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Nap bien moi truong
+# Nap bien moi truong (uu tien bien moi truong container/shell, sau do toi .env o thu muc goc)
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent.parent
 load_dotenv(PROJECT_DIR / ".env")
-load_dotenv(BASE_DIR / ".env")
+
+
+def _running_in_docker() -> bool:
+    return Path("/.dockerenv").exists() or os.getenv("RUNNING_IN_DOCKER") == "1"
+
 
 DB_HOST = os.getenv("DB_HOST", "127.0.0.1")
-if DB_HOST == "mysql":
+if DB_HOST == "mysql" and not _running_in_docker():
     DB_HOST = "127.0.0.1"
+DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "Namle123456")
-DB_NAME = "goodreads"
-SQLITE_PATH = BASE_DIR / "books.db"
+DB_NAME = os.getenv("DB_NAME") or os.getenv("WEB_DB_NAME") or "goodreads_web"
+SQLITE_PATH = Path(os.getenv("SQLITE_PATH", str(BASE_DIR / "books.db")))
+SAMPLES_DIR = Path(os.getenv("SAMPLES_DIR", str(PROJECT_DIR / "samples_data")))
 
 
 def get_db_connection():
@@ -30,6 +36,7 @@ def get_db_connection():
         import pymysql
         conn = pymysql.connect(
             host=DB_HOST,
+            port=DB_PORT,
             user=DB_USER,
             password=DB_PASSWORD,
             charset="utf8mb4",
@@ -41,6 +48,8 @@ def get_db_connection():
         return "mysql", conn
     except Exception as e:
         import sqlite3
+        print(f"[Init Data] Canh bao: Khong ket noi duoc MySQL ({DB_HOST}:{DB_PORT}): {e}. Fallback sang SQLite...")
+        SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(SQLITE_PATH))
         conn.row_factory = sqlite3.Row
         return "sqlite", conn
@@ -216,7 +225,7 @@ def import_samples():
     force = "--force" in sys.argv or "-f" in sys.argv
     current_count = check_existing_data(db_type, conn)
     if current_count > 0 and not force:
-        sample_dir = PROJECT_DIR / "samples_data"
+        sample_dir = SAMPLES_DIR
         repair_genre_mappings(db_type, conn, sample_dir)
         print(f"[Init Data] CSDL ({db_type.upper()}) da co san {current_count} cuon sach. Bo qua nap moi.")
         conn.close()
@@ -236,7 +245,7 @@ def import_samples():
             conn.commit()
         cur.close()
 
-    sample_dir = PROJECT_DIR / "samples_data"
+    sample_dir = SAMPLES_DIR
     if not sample_dir.exists() or not (sample_dir / "books").exists():
         print(f"[Init Data] Canh bao: Khong tim thay thu muc samples_data tai {sample_dir}.")
         conn.close()
@@ -371,7 +380,7 @@ def import_samples():
 
 def import_sample_reviews():
     """Add the sample review text to its own table; never rewrite Parquet inputs."""
-    sample_dir = PROJECT_DIR / "samples_data"
+    sample_dir = SAMPLES_DIR
     reviews_dir = sample_dir / "reviews"
     if not reviews_dir.exists():
         print(f"[Init Data] Khong tim thay review samples tai {reviews_dir}.")
