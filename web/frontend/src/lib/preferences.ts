@@ -67,6 +67,7 @@ export type RecommendationProfile = {
   reading_frequency: string | null;
   preferred_book_length: string | null;
   favorite_books: string[];
+  reading_goal_yearly: number | null;
   onboarding_completed: boolean;
 };
 
@@ -77,5 +78,6 @@ export const EMPTY_PROFILE: Omit<RecommendationProfile, "user_id"> = {
   reading_frequency: null,
   preferred_book_length: null,
   favorite_books: [],
+  reading_goal_yearly: null,
   onboarding_completed: false,
 };

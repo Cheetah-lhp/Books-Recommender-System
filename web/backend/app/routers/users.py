@@ -72,6 +72,7 @@ def get_rec_profile(user: Annotated[User, Depends(get_current_user)], db: Annota
         "reading_frequency": row.reading_frequency,
         "preferred_book_length": row.preferred_book_length,
         "favorite_books": row.favorite_books or [],
+        "reading_goal_yearly": row.reading_goal_yearly,
     }
 
 
@@ -91,8 +92,20 @@ def put_rec_profile(
     row.reading_frequency = body.reading_frequency
     row.preferred_book_length = body.preferred_book_length
     row.favorite_books = body.favorite_books
+    if body.reading_goal_yearly is None:
+        row.reading_goal_yearly = None
+    else:
+        row.reading_goal_yearly = max(1, min(500, int(body.reading_goal_yearly)))
     db.commit()
-    return body.model_dump()
+    return {
+        "genres": row.genres or [],
+        "themes": row.themes or [],
+        "reading_mood": row.reading_mood,
+        "reading_frequency": row.reading_frequency,
+        "preferred_book_length": row.preferred_book_length,
+        "favorite_books": row.favorite_books or [],
+        "reading_goal_yearly": row.reading_goal_yearly,
+    }
 
 
 @router.post("/me/recommendation-feedback")

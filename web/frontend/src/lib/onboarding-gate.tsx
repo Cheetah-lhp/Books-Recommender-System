@@ -25,6 +25,7 @@ export function OnboardingGate() {
         if (cancelled || !res.ok) return;
         const data = (await res.json()) as { genres?: string[] };
         const done = Array.isArray(data.genres) && data.genres.length > 0;
+        // Genres are required; rating books is a soft gate on Discover.
         if (!done) void navigate({ to: "/recommend", replace: true });
       } catch {
         /* ignore */

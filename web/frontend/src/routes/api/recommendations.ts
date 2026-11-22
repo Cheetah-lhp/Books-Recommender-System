@@ -33,7 +33,7 @@ async function proxy(request: Request): Promise<Response> {
     });
   } catch (error) {
     console.error("recommendations proxy failed", error);
-    return Response.json({ books: [] }, { status: 200 });
+    return Response.json({ detail: "Recommendation service unavailable" }, { status: 502 });
   }
 }
 

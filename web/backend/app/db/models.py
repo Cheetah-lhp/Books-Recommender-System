@@ -107,6 +107,7 @@ class RecommendationProfile(Base):
     reading_frequency: Mapped[str | None] = mapped_column(String(64), nullable=True)
     preferred_book_length: Mapped[str | None] = mapped_column(String(64), nullable=True)
     favorite_books: Mapped[list] = mapped_column(JSON, default=list)
+    reading_goal_yearly: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class RecommendationFeedback(Base):

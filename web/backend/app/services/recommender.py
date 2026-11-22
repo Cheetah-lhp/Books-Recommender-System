@@ -279,17 +279,40 @@ def build_sections(db: Session, user_id: Optional[str]) -> list[dict[str, Any]]:
         ranked.append({"book": book, "score": score, "why": why})
     ranked.sort(key=lambda x: x["score"], reverse=True)
 
-    sections = [{"key": "for-you", "title": "Recommended for You", "books": ranked[:12]}]
-    if signals.genres:
-        top = signals.genres[0]
+    has_taste = bool(
+        signals.ratings or signals.genres or any(s.get("status") == "read" for s in signals.shelves)
+    )
+    if not has_taste:
+        return []
+
+    sections: list[dict[str, Any]] = []
+    if signals.ratings or any(s.get("status") == "read" for s in signals.shelves):
+        sections.append({"key": "based-on-read", "title": "Based on Your Read Shelf", "books": ranked[:12]})
+    elif ranked:
+        sections.append({"key": "based-on-genres", "title": "Based on Your Favorite Genres", "books": ranked[:12]})
+
+    for genre in signals.genres[:3]:
         in_genre = [
             r
             for r in ranked
-            if any(top.lower() in str(v).lower() for v in (r["book"].get("categories") or []) + (r["book"].get("tags") or []))
+            if any(
+                genre.lower() in str(v).lower()
+                for v in (r["book"].get("categories") or []) + (r["book"].get("tags") or [])
+            )
         ]
         if in_genre:
-            sections.append({"key": "genre", "title": f"Because You Like {top}", "books": in_genre[:6]})
-    gems = [r for r in ranked if float(r["book"].get("rating") or 0) >= 4.2 and float(r["book"].get("ratings_count") or 0) < 40000][:6]
+            sections.append(
+                {
+                    "key": f"genre-{genre.lower().replace(' ', '-')}",
+                    "title": f"Because You Like {genre}",
+                    "books": in_genre[:6],
+                }
+            )
+    gems = [
+        r
+        for r in ranked
+        if float(r["book"].get("rating") or 0) >= 4.2 and float(r["book"].get("ratings_count") or 0) < 40000
+    ][:6]
     if gems:
         sections.append({"key": "gems", "title": "Hidden Gems", "books": gems})
     return [s for s in sections if s["books"]]

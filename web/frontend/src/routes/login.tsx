@@ -10,6 +10,11 @@ import { login as apiLogin } from "@/lib/auth-api";
 import { useI18n } from "@/lib/i18n";
 
 export const Route = createFileRoute("/login")({
+  validateSearch: (search: Record<string, unknown>): { next?: string } => {
+    const next = search["next"];
+    if (typeof next === "string" && next.startsWith("/")) return { next };
+    return {};
+  },
   head: () => ({
     meta: [
       { title: "Sign in — READORA" },
@@ -24,6 +29,7 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -33,7 +39,9 @@ function LoginPage() {
     setBusy(true);
     try {
       await apiLogin(email, password);
-      void navigate({ to: "/" });
+      if (next === "/recommend") void navigate({ to: "/recommend" });
+      else if (next === "/discover") void navigate({ to: "/discover" });
+      else void navigate({ to: "/" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign-in failed");
     } finally {

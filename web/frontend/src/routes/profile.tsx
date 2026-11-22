@@ -32,7 +32,7 @@ function ProfilePage() {
   const stats = [
     { label: t("profile.booksRead"), value: items.filter((i) => i.status === "read").length },
     { label: t("profile.currentlyReading"), value: items.filter((i) => i.status === "reading").length },
-    { label: t("profile.wantToRead"), value: items.filter((i) => i.status === "want_to_read").length },
+    { label: t("profile.wantToRead"), value: items.filter((i) => i.status === "want" || i.status === "want_to_read").length },
   ];
 
   if (!user) {
@@ -98,7 +98,7 @@ function ProfilePage() {
           <p className="text-sm text-muted-foreground">
             You haven&apos;t set your reading taste yet —{" "}
             <Link to="/recommend" className="font-semibold text-gold">
-              answer the recommendation questions
+              pick your favorite genres
             </Link>
             .
           </p>

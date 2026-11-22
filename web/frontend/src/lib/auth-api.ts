@@ -109,7 +109,59 @@ export async function logout() {
 
 export async function authFetch(input: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers);
-  const token = getAccessToken();
+  let token = getAccessToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  return fetch(input, { ...init, headers });
+  let res = await fetch(input, { ...init, headers });
+
+  // Tu dong lam moi token neu gap 401
+  if (res.status === 401 && typeof window !== "undefined") {
+    const refresh = localStorage.getItem(REFRESH_KEY);
+    if (refresh) {
+      try {
+        const refreshRes = await fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+        if (refreshRes.ok) {
+          const data = (await refreshRes.json()) as TokenResponse;
+          persist(data);
+          token = data.access_token;
+          headers.set("Authorization", `Bearer ${token}`);
+          res = await fetch(input, { ...init, headers });
+        } else {
+          clearSession();
+        }
+      } catch {
+        clearSession();
+      }
+    } else {
+      clearSession();
+    }
+  }
+
+  // Ghi log ho tro kiem tra he thong
+  if (typeof input === "string" && (input.includes("/api/library") || input.includes("/api/auth") || input.includes("/api/users/me"))) {
+    fetch("http://127.0.0.1:7460/ingest/b819d754-3046-494d-a58c-7e31ffe6c52a", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "829bc3" },
+      body: JSON.stringify({
+        sessionId: "829bc3",
+        runId: "pre-fix",
+        hypothesisId: "A",
+        location: "auth-api.ts:authFetch",
+        message: "authFetch result",
+        data: {
+          path: input,
+          method: init.method ?? "GET",
+          hasToken: Boolean(token),
+          tokenLen: token?.length ?? 0,
+          status: res.status,
+          hasStoredUser: Boolean(getStoredUser()),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }
+  return res;
 }

@@ -1,12 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, createFileRoute } from "@tanstack/react-router";
 
-
 import { AppShell } from "@/components/readora/AppShell";
 import { BookCard, SectionHeader } from "@/components/readora/BookCard";
 import { Button } from "@/components/ui/button";
-import { trendingBooksQuery } from "@/lib/data";
+import { useAuth } from "@/lib/auth";
+import { READORA_CATEGORY_DEFS } from "@/lib/categories";
+import { topRatedQuery } from "@/lib/data";
 import { useI18n } from "@/lib/i18n";
+import { useRecommendationProfile } from "@/lib/recommend";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -15,12 +17,12 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Personalized book recommendations based on your interests, mood and reading history. Discover trending books, reviews and a reader community.",
+          "Personalized book recommendations based on your interests, mood and reading history. Discover top-rated books and browse by genre.",
       },
       { property: "og:title", content: "READORA — Your Next Great Book, Powered by AI" },
       {
         property: "og:description",
-        content: "Personalized AI book recommendations, reviews and a community of readers.",
+        content: "Personalized AI book recommendations and a curated catalog of great reads.",
       },
     ],
   }),
@@ -29,7 +31,10 @@ export const Route = createFileRoute("/")({
 
 function Index() {
   const { t } = useI18n();
-  const { data: trending = [] } = useQuery(trendingBooksQuery);
+  const { user } = useAuth();
+  const { data: profile } = useRecommendationProfile(user?.id ?? null);
+  const { data: topRated = [] } = useQuery(topRatedQuery);
+  const hasGenres = Boolean(profile?.genres?.length);
 
   return (
     <AppShell>
@@ -54,7 +59,15 @@ function Index() {
                 variant="outline"
                 className="rounded-full border-border px-6 text-foreground hover:bg-accent"
               >
-                <Link to="/chat">{t("hero.cta2")}</Link>
+                {!user ? (
+                  <Link to="/login" search={{ next: "/recommend" }}>
+                    {t("hero.cta2")}
+                  </Link>
+                ) : hasGenres ? (
+                  <Link to="/discover">{t("hero.cta2")}</Link>
+                ) : (
+                  <Link to="/recommend">{t("hero.cta2")}</Link>
+                )}
               </Button>
             </div>
           </div>
@@ -67,23 +80,45 @@ function Index() {
               className="h-auto w-full max-w-[380px] object-contain sm:max-w-[460px] md:w-[520px] md:max-w-none lg:w-[560px] xl:w-[600px]"
             />
           </div>
-
-
         </div>
       </section>
 
       <section className="mt-10">
         <SectionHeader
-          title={t("home.trending")}
+          title={t("home.topRated")}
           action={
             <Button asChild variant="outline" size="sm" className="rounded-full">
-              <Link to="/discover">{t("action.viewAll")}</Link>
+              <Link to="/top-rated">{t("action.viewAll")}</Link>
             </Button>
           }
         />
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {trending.slice(0, 5).map((book) => (
+          {topRated.slice(0, 5).map((book) => (
             <BookCard key={book.id} book={book} />
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-10">
+        <SectionHeader
+          title={t("home.browseGenres")}
+          subtitle={t("categories.sub")}
+          action={
+            <Button asChild variant="outline" size="sm" className="rounded-full">
+              <Link to="/discover/categories">{t("action.viewAll")}</Link>
+            </Button>
+          }
+        />
+        <div className="flex flex-wrap gap-2">
+          {READORA_CATEGORY_DEFS.map((cat) => (
+            <Link
+              key={cat.slug}
+              to="/category/$slug"
+              params={{ slug: cat.slug }}
+              className="rounded-full border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:border-gold hover:text-gold"
+            >
+              {cat.name}
+            </Link>
           ))}
         </div>
       </section>

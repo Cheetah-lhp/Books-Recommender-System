@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
-from app.core.deps import get_optional_user
+from app.core.deps import get_current_user
 from app.core.redis_client import cache_get_json, cache_header, cache_set_json
 from app.db.models import User
 from app.db.session import get_db
@@ -51,21 +51,19 @@ def get_recommendations(
     request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[Optional[User], Depends(get_optional_user)],
-    userId: Optional[str] = None,
+    user: Annotated[User, Depends(get_current_user)],
 ):
     client = request.client.host if request.client else "unknown"
     if not _rate_limit(f"rec:{client}", settings.RATE_LIMIT_RECOMMEND_PER_MIN):
         return {"books": []}
 
-    uid = user.id if user else userId
-    key = _cache_key(uid, {"mode": "get"})
+    key = _cache_key(user.id, {"mode": "get"})
     cached = cache_get_json(key)
     response.headers["X-Cache"] = cache_header(cached is not None)
     if cached is not None:
         return cached
 
-    books = recommend(db if uid else None, user_id=uid, limit=12)
+    books = recommend(db, user_id=user.id, limit=12)
     payload = {"books": books}
     cache_set_json(key, payload, settings.RECOMMENDATION_CACHE_TTL_SECONDS)
     return payload
@@ -77,20 +75,20 @@ def post_recommendations(
     request: Request,
     response: Response,
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[Optional[User], Depends(get_optional_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
     client = request.client.host if request.client else "unknown"
     if not _rate_limit(f"rec:{client}", settings.RATE_LIMIT_RECOMMEND_PER_MIN):
         return {"books": []}
 
     answers = body.model_dump()
-    key = _cache_key(user.id if user else None, answers)
+    key = _cache_key(user.id, answers)
     cached = cache_get_json(key)
     response.headers["X-Cache"] = cache_header(cached is not None)
     if cached is not None:
         return cached
 
-    books = recommend(db, user_id=user.id if user else None, answers=answers, limit=12)
+    books = recommend(db, user_id=user.id, answers=answers, limit=12)
     payload = {"books": books}
     cache_set_json(key, payload, settings.RECOMMENDATION_CACHE_TTL_SECONDS)
     return payload
@@ -99,6 +97,6 @@ def post_recommendations(
 @router.get("/sections")
 def get_sections(
     db: Annotated[Session, Depends(get_db)],
-    user: Annotated[Optional[User], Depends(get_optional_user)],
+    user: Annotated[User, Depends(get_current_user)],
 ):
-    return {"sections": build_sections(db, user.id if user else None)}
+    return {"sections": build_sections(db, user.id)}

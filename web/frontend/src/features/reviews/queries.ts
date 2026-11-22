@@ -1,6 +1,21 @@
 import { queryOptions } from "@tanstack/react-query";
+import { authFetch } from "@/lib/auth-api";
 import { apiFetch } from "@/shared/api/client";
 import type { SampleReview, UserReview } from "./types";
+
+export function myReviewsQuery(userId: string | null) {
+  return queryOptions({
+    queryKey: ["reviews", "me", userId],
+    enabled: Boolean(userId),
+    queryFn: async (): Promise<{ book_id: string; rating: number }[]> => {
+      const res = await authFetch("/api/reviews/me");
+      if (!res.ok) return [];
+      const rows = (await res.json()) as { book_id: string; rating: number }[];
+      return rows.map((r) => ({ book_id: String(r.book_id), rating: Number(r.rating) }));
+    },
+    staleTime: 60_000,
+  });
+}
 
 export function sampleReviewsQuery(bookId: string) {
   return queryOptions({

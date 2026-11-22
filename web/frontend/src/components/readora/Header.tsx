@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Heart, Menu, Moon, Package, Search, ShoppingBag, Sun } from "lucide-react";
+import { Menu, Moon, Search, ShoppingBag, Sun } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { LogoLockup } from "@/components/readora/Logo";
@@ -88,14 +88,6 @@ export function Header() {
         {theme === "dark" ? <Sun className="h-5 w-5 text-gold" /> : <Moon className="h-5 w-5 text-gold" />}
       </Button>
 
-      {/* Wishlist Button */}
-      <Button asChild variant="ghost" size="icon" aria-label="Wishlist" className="relative">
-        <Link to="/wishlist">
-          <Heart className="h-5 w-5 text-foreground hover:text-rose-500 transition-colors" />
-        </Link>
-      </Button>
-
-      {/* Cart Button with Count Badge */}
       <Button asChild variant="ghost" size="icon" aria-label="Cart" className="relative">
         <Link to="/cart">
           <ShoppingBag className="h-5 w-5 text-foreground hover:text-gold transition-colors" />

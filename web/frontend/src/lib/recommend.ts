@@ -38,6 +38,7 @@ export function useSaveRecommendationProfile(userId: string | null) {
           reading_frequency: patch.reading_frequency ?? null,
           preferred_book_length: patch.preferred_book_length ?? null,
           favorite_books: patch.favorite_books ?? [],
+          reading_goal_yearly: patch.reading_goal_yearly ?? null,
         }),
       });
       if (!res.ok) throw new Error("Could not save preferences");

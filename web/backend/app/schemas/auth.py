@@ -43,6 +43,7 @@ class RecommendationProfileIn(BaseModel):
     reading_frequency: Optional[str] = None
     preferred_book_length: Optional[str] = None
     favorite_books: list[str] = []
+    reading_goal_yearly: Optional[int] = None
 
 
 class FeedbackIn(BaseModel):

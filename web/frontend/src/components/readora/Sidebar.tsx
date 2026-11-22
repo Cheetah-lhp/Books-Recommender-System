@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Compass, Heart, Home, LogOut, Package, Settings, ShoppingBag, Star, User, Users } from "lucide-react";
+import { Compass, Home, LogOut, Package, Settings, ShoppingBag, Star, User } from "lucide-react";
 
 import { LogoMark } from "@/components/readora/Logo";
 import { useAuth } from "@/lib/auth";
@@ -10,9 +10,7 @@ export const NAV_ITEMS = [
   { to: "/", label: "nav.home" as TKey, icon: Home },
   { to: "/discover", label: "nav.discover" as TKey, icon: Compass },
   { to: "/cart", label: "nav.cart" as TKey, icon: ShoppingBag },
-  { to: "/wishlist", label: "nav.wishlist" as TKey, icon: Heart },
   { to: "/orders", label: "nav.orders" as TKey, icon: Package },
-  { to: "/community", label: "nav.community" as TKey, icon: Users },
   { to: "/top-rated", label: "nav.topRated" as TKey, icon: Star },
   { to: "/profile", label: "nav.profile" as TKey, icon: User },
   { to: "/settings", label: "nav.settings" as TKey, icon: Settings },

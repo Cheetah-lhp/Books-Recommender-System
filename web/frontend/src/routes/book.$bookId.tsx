@@ -1,17 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
-import { Heart, Minus, Plus, ShoppingBag, Sparkles, Star, Zap } from "lucide-react";
+import { Minus, Plus, ShoppingBag, Sparkles, Star, Zap } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { AppShell } from "@/components/readora/AppShell";
 import { BookCover } from "@/components/readora/BookCard";
 import { Rating, Stars } from "@/components/readora/Rating";
+import { ShelfButton } from "@/components/readora/ShelfButton";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/auth";
 import { authFetch } from "@/lib/auth-api";
-import { addToCart, fetchUserWishlist, formatPrice, toggleWishlist } from "@/lib/ecommerce";
+import { addToCart, formatPrice } from "@/lib/ecommerce";
+import { normalizeShelfStatus, setShelf, type ShelfStatus } from "@/lib/library";
 import { useRecommendationProfile, useWhyThisBook } from "@/lib/recommend";
 import {
   bookQuery,
@@ -28,7 +30,7 @@ export const Route = createFileRoute("/book/$bookId")({
   head: () => ({
     meta: [
       { title: "Book details — READORA" },
-      { name: "description", content: "Read the description, ratings and community reviews for this book." },
+      { name: "description", content: "Read the description, ratings and reviews for this book." },
       { property: "og:title", content: "Book details — READORA" },
       { property: "og:description", content: "Ratings, reviews and recommendations on READORA." },
     ],
@@ -60,12 +62,6 @@ function BookPage() {
   const [body, setBody] = useState("");
   const [qty, setQty] = useState(1);
 
-  const { data: wishlist = [] } = useQuery({
-    queryKey: ["wishlist", user?.id],
-    queryFn: () => fetchUserWishlist(user?.id ?? null),
-  });
-  const isWishlisted = wishlist.some((item) => String(item.book_id) === String(bookId));
-
   const addToCartMutation = useMutation({
     mutationFn: async () => {
       await addToCart(user?.id ?? null, bookId, qty);
@@ -88,26 +84,10 @@ function BookPage() {
     onError: () => toast.error("Could not proceed to checkout"),
   });
 
-  const wishlistMutation = useMutation({
-    mutationFn: async () => {
-      return await toggleWishlist(user?.id ?? null, bookId);
-    },
-    onSuccess: (added) => {
-      toast.success(added ? "Added to wishlist" : "Removed from wishlist");
-      void qc.invalidateQueries({ queryKey: ["wishlist"] });
-    },
-    onError: () => toast.error("Could not update wishlist"),
-  });
-
   const shelve = useMutation({
-    mutationFn: async (status: string) => {
+    mutationFn: async (status: ShelfStatus) => {
       if (!user) throw new Error("auth");
-      const res = await authFetch("/api/library/me", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ book_id: bookId, status }),
-      });
-      if (!res.ok) throw new Error("Could not save");
+      await setShelf(bookId, status);
     },
     onSuccess: () => {
       toast.success("Saved to your library");
@@ -159,7 +139,7 @@ function BookPage() {
     );
   }
 
-  const shelfStatus = shelf.find((s) => s.book_id === book.id)?.status ?? null;
+  const shelfStatus = normalizeShelfStatus(shelf.find((s) => s.book_id === book.id)?.status);
 
   const totalReviews = reviews.length;
   const fallbackPct: Record<number, number> = { 5: 79, 4: 16, 3: 4, 2: 1, 1: 0 };
@@ -260,7 +240,6 @@ function BookPage() {
                   </div>
                 </div>
 
-                {/* Primary Action Buttons: Add to Cart, Buy Now, Wishlist */}
                 <div className="mt-4 flex flex-wrap gap-2.5">
                   <Button
                     onClick={() => addToCartMutation.mutate()}
@@ -279,39 +258,21 @@ function BookPage() {
                     <Zap className="h-4 w-4 text-gold" />
                     <span>{t("action.buyNow") || "Buy Now"}</span>
                   </Button>
-
-                  <Button
-                    variant="outline"
-                    onClick={() => wishlistMutation.mutate()}
-                    disabled={wishlistMutation.isPending}
-                    className={`h-11 w-11 rounded-full border-border p-0 transition-colors ${
-                      isWishlisted ? "bg-rose-500/10 border-rose-500/30 text-rose-500" : "text-muted-foreground hover:text-rose-500"
-                    }`}
-                    aria-label="Wishlist"
-                  >
-                    <Heart className={`h-5 w-5 ${isWishlisted ? "fill-current text-rose-500" : ""}`} />
-                  </Button>
                 </div>
               </div>
 
-              {/* Reading Status Buttons */}
-              <div className="mt-4 flex flex-wrap gap-3">
-                <Button
-                  variant="outline"
-                  className="rounded-full text-xs"
-                  disabled={shelve.isPending}
-                  onClick={() => shelve.mutate("reading")}
-                >
-                  {shelfStatus === "reading" ? "In your library" : t("book.addLibrary")}
-                </Button>
-                <Button
-                  variant="outline"
-                  className="rounded-full text-xs"
-                  disabled={shelve.isPending}
-                  onClick={() => shelve.mutate("want_to_read")}
-                >
-                  {shelfStatus === "want_to_read" ? "On your list" : t("book.wantRead")}
-                </Button>
+              <div className="mt-4">
+                <ShelfButton
+                  status={shelfStatus}
+                  disabled={shelve.isPending || !user}
+                  onChange={(status) => {
+                    if (!user) {
+                      toast.error(t("auth.signedOut"));
+                      return;
+                    }
+                    shelve.mutate(status);
+                  }}
+                />
               </div>
             </div>
           </div>
