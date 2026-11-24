@@ -216,15 +216,16 @@ if [ "${1:-}" = "-f" ] || [ "${1:-}" = "--follow" ] || [ "${1:-}" = "-l" ] || [ 
     FOLLOW_LOGS=1
 fi
 
-echo "[1/3] Build va khoi chay MySQL, Redis, Backend, Frontend, Nginx qua Docker..."
+echo "[1/3] Build va khoi chay MySQL, Redis, Recommender, Backend, Frontend, Nginx qua Docker..."
 if "${COMPOSE_CMD[@]}" up --help < /dev/null 2>/dev/null | grep -q -- '--wait'; then
-    "${COMPOSE_CMD[@]}" up -d --build --wait mysql redis backend frontend nginx < /dev/null
+    "${COMPOSE_CMD[@]}" up -d --build --wait mysql redis recommender backend frontend nginx < /dev/null
 else
-    "${COMPOSE_CMD[@]}" up -d --build mysql redis backend frontend nginx < /dev/null
+    "${COMPOSE_CMD[@]}" up -d --build mysql redis recommender backend frontend nginx < /dev/null
     echo "Dang cho cac service san sang..."
     READY=0
     for _ in $(seq 1 90); do
         if command -v curl >/dev/null 2>&1 \
+            && curl --connect-timeout 2 -m 5 -fsS "http://127.0.0.1:${RECOMMENDER_PORT:-8001}/health" >/dev/null 2>&1 \
             && curl --connect-timeout 2 -m 5 -fsS "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null 2>&1 \
             && curl --connect-timeout 2 -m 5 -fsS "http://127.0.0.1:${NGINX_PORT}/health" >/dev/null 2>&1 \
             && curl --connect-timeout 2 -m 5 -fsS "http://127.0.0.1:${DOCKER_FRONTEND_PORT}/" >/dev/null 2>&1; then

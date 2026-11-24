@@ -159,7 +159,17 @@ function BookPage() {
             <BookCover book={book} className="mx-auto aspect-[2/3] w-40 sm:mx-0 sm:w-full" />
             <div className="min-w-0">
               <h1 className="font-display text-2xl font-extrabold text-foreground sm:text-3xl">{book.title}</h1>
-              <p className="text-sm text-muted-foreground">{book.author_name}</p>
+              {book.author_name ? (
+                <Link
+                  to="/author/$authorName"
+                  params={{ authorName: book.author_name }}
+                  className="text-sm text-muted-foreground transition-colors hover:text-gold hover:underline"
+                >
+                  {book.author_name}
+                </Link>
+              ) : (
+                <p className="text-sm text-muted-foreground">{book.author_name}</p>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <Rating value={book.rating} />
                 <Stars value={book.rating} />
@@ -264,10 +274,11 @@ function BookPage() {
               <div className="mt-4">
                 <ShelfButton
                   status={shelfStatus}
-                  disabled={shelve.isPending || !user}
+                  disabled={shelve.isPending}
                   onChange={(status) => {
                     if (!user) {
                       toast.error(t("auth.signedOut"));
+                      void navigate({ to: "/login", search: { next: `/book/${bookId}` } });
                       return;
                     }
                     shelve.mutate(status);

@@ -26,6 +26,7 @@ import { Route as TopRatedRouteImport } from './routes/top-rated'
 import { Route as WishlistRouteImport } from './routes/wishlist'
 import { Route as ApiRecommendationsRouteImport } from './routes/api/recommendations'
 import { Route as BookBookIdRouteImport } from './routes/book.$bookId'
+import { Route as AuthorAuthorNameRouteImport } from './routes/author.$authorName'
 import { Route as CategorySlugRouteImport } from './routes/category.$slug'
 import { Route as DiscoverIndexRouteImport } from './routes/discover.index'
 import { Route as DiscoverCategoriesRouteImport } from './routes/discover.categories'
@@ -120,6 +121,11 @@ const CategorySlugRoute = CategorySlugRouteImport.update({
   path: '/category/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthorAuthorNameRoute = AuthorAuthorNameRouteImport.update({
+  id: '/author/$authorName',
+  path: '/author/$authorName',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DiscoverIndexRoute = DiscoverIndexRouteImport.update({
   id: '/discover/',
   path: '/discover/',
@@ -150,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/api/recommendations': typeof ApiRecommendationsRoute
   '/book/$bookId': typeof BookBookIdRoute
   '/category/$slug': typeof CategorySlugRoute
+  '/author/$authorName': typeof AuthorAuthorNameRoute
   '/discover/categories': typeof DiscoverCategoriesRoute
   '/discover/': typeof DiscoverIndexRoute
 }
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/api/recommendations': typeof ApiRecommendationsRoute
   '/book/$bookId': typeof BookBookIdRoute
   '/category/$slug': typeof CategorySlugRoute
+  '/author/$authorName': typeof AuthorAuthorNameRoute
   '/discover/categories': typeof DiscoverCategoriesRoute
   '/discover': typeof DiscoverIndexRoute
 }
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   '/api/recommendations': typeof ApiRecommendationsRoute
   '/book/$bookId': typeof BookBookIdRoute
   '/category/$slug': typeof CategorySlugRoute
+  '/author/$authorName': typeof AuthorAuthorNameRoute
   '/discover/categories': typeof DiscoverCategoriesRoute
   '/discover/': typeof DiscoverIndexRoute
 }
@@ -219,6 +228,7 @@ export interface FileRouteTypes {
     | '/api/recommendations'
     | '/book/$bookId'
     | '/category/$slug'
+  | '/author/$authorName'
     | '/discover/categories'
     | '/discover/'
   fileRoutesByTo: FileRoutesByTo
@@ -241,6 +251,7 @@ export interface FileRouteTypes {
     | '/api/recommendations'
     | '/book/$bookId'
     | '/category/$slug'
+  | '/author/$authorName'
     | '/discover/categories'
     | '/discover'
   id:
@@ -263,6 +274,7 @@ export interface FileRouteTypes {
     | '/api/recommendations'
     | '/book/$bookId'
     | '/category/$slug'
+  | '/author/$authorName'
     | '/discover/categories'
     | '/discover/'
   fileRoutesById: FileRoutesById
@@ -286,6 +298,7 @@ export interface RootRouteChildren {
   ApiRecommendationsRoute: typeof ApiRecommendationsRoute
   BookBookIdRoute: typeof BookBookIdRoute
   CategorySlugRoute: typeof CategorySlugRoute
+  AuthorAuthorNameRoute: typeof AuthorAuthorNameRoute
   DiscoverCategoriesRoute: typeof DiscoverCategoriesRoute
   DiscoverIndexRoute: typeof DiscoverIndexRoute
 }
@@ -411,6 +424,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BookBookIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/author/$authorName': {
+      id: '/author/$authorName'
+      path: '/author/$authorName'
+      fullPath: '/author/$authorName'
+      preLoaderRoute: typeof AuthorAuthorNameRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/category/$slug': {
       id: '/category/$slug'
       path: '/category/$slug'
@@ -454,6 +474,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiRecommendationsRoute: ApiRecommendationsRoute,
   BookBookIdRoute: BookBookIdRoute,
   CategorySlugRoute: CategorySlugRoute,
+  AuthorAuthorNameRoute: AuthorAuthorNameRoute,
   DiscoverCategoriesRoute: DiscoverCategoriesRoute,
   DiscoverIndexRoute: DiscoverIndexRoute,
 }

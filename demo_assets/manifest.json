@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "run_id": "remote-demo",
+  "archive": "remote-demo-serving.tar.gz",
+  "sha256": "b6700455d21a7244535d7834a0a5d62151d193a9b035fa837974f6873d79a4f5",
+  "bytes": 6618465,
+  "items": 9914,
+  "book_id_namespace": "book_id_csv",
+  "files": {
+    "serving/manifest.json": "2e33eb46643dae6b32508f16d5106cd52c1fa7dec6a2181b8039891137d2d2da",
+    "serving/items/part-00000-7b095f84-bd39-48e6-b49f-ccea4fa57ca8-c000.snappy.parquet": "80a97a21c2b3d0bca7d11e2b7a4e5021e169e74609c2bcd1ded8c0ed2c10a86b",
+    "serving/items/part-00001-7b095f84-bd39-48e6-b49f-ccea4fa57ca8-c000.snappy.parquet": "0b059b9def8971467e9a482f7a242db5b4353955903d82ba28896a91fe43985b",
+    "serving/aliases/part-00000-67ad425f-d702-4bbe-b9a4-203b3e274796-c000.snappy.parquet": "1534189b077104fadfb185f973246ec0bb10ba46bc89a6df85691c619a8aeaa2",
+    "serving/als_items/part-00000-02d83792-52d4-4643-98e1-d74c9d5f224c-c000.snappy.parquet": "67dd6f5626541cb81afb143a53c84f2144b6966ff879f62922c27828b86959ba",
+    "serving/als_items/part-00001-02d83792-52d4-4643-98e1-d74c9d5f224c-c000.snappy.parquet": "33d46661692b232cdd070ba4eeffb71b551f02a78847e1133348b8f53b64fc93"
+  }
+}

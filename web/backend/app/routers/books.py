@@ -16,6 +16,7 @@ def list_books(
     limit: int = Query(20, ge=1, le=100),
     q: Optional[str] = None,
     category: Optional[List[str]] = Query(default=None),
+    author: Optional[str] = Query(default=None, min_length=1, max_length=200),
     min_rating: Optional[float] = None,
     sort: Literal["rating", "ratings_count", "trending", "title", "published_year"] = "rating",
 ):
@@ -24,7 +25,7 @@ def list_books(
     db_type, conn = get_conn()
     try:
         total, rows = repo.get_books_paginated(
-            conn, db_type, limit, offset, q, category, min_rating, sort
+            conn, db_type, limit, offset, q, category, min_rating, sort, author=author
         )
     finally:
         conn.close()

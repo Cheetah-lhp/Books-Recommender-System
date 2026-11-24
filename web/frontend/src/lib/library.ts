@@ -22,43 +22,11 @@ export function normalizeShelfStatus(status: string | null | undefined): ShelfSt
 }
 
 export async function setShelf(bookId: string, status: ShelfStatus): Promise<void> {
-  const payload = { book_id: bookId, status };
-  // #region agent log
-  fetch("http://127.0.0.1:7460/ingest/b819d754-3046-494d-a58c-7e31ffe6c52a", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "829bc3" },
-    body: JSON.stringify({
-      sessionId: "829bc3",
-      runId: "pre-fix",
-      hypothesisId: "C",
-      location: "library.ts:setShelf",
-      message: "setShelf request",
-      data: { bookId, status, bookIdType: typeof bookId },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   const res = await authFetch("/api/library/me", {
     method: "PUT",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ book_id: bookId, status }),
   });
-  // #region agent log
-  const errBody = res.ok ? null : await res.clone().text().catch(() => "");
-  fetch("http://127.0.0.1:7460/ingest/b819d754-3046-494d-a58c-7e31ffe6c52a", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "829bc3" },
-    body: JSON.stringify({
-      sessionId: "829bc3",
-      runId: "pre-fix",
-      hypothesisId: "A",
-      location: "library.ts:setShelf:response",
-      message: "setShelf response",
-      data: { bookId, status, ok: res.ok, httpStatus: res.status, errBody },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
   if (!res.ok) throw new Error("Could not update shelf");
 }
 

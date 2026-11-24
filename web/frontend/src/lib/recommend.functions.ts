@@ -74,5 +74,5 @@ export const naturalSearch = createServerFn({ method: "POST" })
   });
 
 export const getMlStatus = createServerFn({ method: "GET" }).handler(async () => {
-  return { models: { recommender: "fastapi", sentiment: "off", query: "off" } };
+  return { models: { recommender: "hybrid-serving", sentiment: "off", query: "off" } };
 });

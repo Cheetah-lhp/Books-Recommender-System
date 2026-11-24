@@ -1,15 +1,12 @@
 import os
 import pymysql
 import logging
-import requests
 from dotenv import load_dotenv
 from pathlib import Path
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
-from itertools import chain
 from pyspark.sql import SparkSession
-from pyspark.sql.types import StringType
-from pyspark.sql.functions import udf, col, explode, regexp_replace, trim, concat_ws, lit, create_map, when, coalesce
+from pyspark.sql.functions import col, explode, regexp_replace, trim, concat_ws, lit, create_map, broadcast
+
+from book_enrichment import enrich_books, load_ol_lookup
 
 
 load_dotenv()
@@ -28,23 +25,15 @@ logging.basicConfig(
     filename = LOG_DIR / 'process.log'
 )
 
-retry_strategy = Retry(
-    total=5,
-    backoff_factor=1,
-    status_forcelist=[429, 500, 502, 503, 504],
-    allowed_methods=['GET']
-)
-
-http_session = requests.Session()
-adapter = HTTPAdapter(max_retries=retry_strategy)
-http_session.mount('https://', adapter)
-
 spark = SparkSession.builder \
     .appName("Goodreads") \
     .config("spark.driver.memory", "4g") \
     .config("spark.sql.shuffle.partitions", "16") \
     .config("spark.jars.packages", "mysql:mysql-connector-java:8.0.33") \
     .getOrCreate()
+
+# Bảng tra cứu ISBN -> language/cover từ Open Library dump; từ chối chạy nếu dump không đạt chất lượng
+df_ol_lookup = load_ol_lookup(spark)
 
 connection = pymysql.connect(host=DB_HOST, user=DB_USER, password=DB_PASSWORD)
 try:
@@ -72,22 +61,6 @@ def save_to_mysql(df, table_name):
         .mode("overwrite") \
         .save()
 
-def replace_image_url(isbn, isbn13, size='L'):
-    for code in [isbn, isbn13]:
-        if code and str(code).strip():
-            code = str(code).strip()
-            url = f'https://covers.openlibrary.org/b/isbn/{code}-{size}.jpg'
-            try:
-                response = http_session.get(url, timeout=3)
-                if response.status_code == 200 and len(response.content) > 1000:
-                    return url
-            except Exception:
-                pass
-
-    return None
-
-fetch_image_url_udf = udf(replace_image_url, StringType())
-
 df_book_id_map = spark.read.csv(str(DIR / 'book_id_map.csv'), header=True, inferSchema=True)
 df_user_id_map = spark.read.csv(str(DIR / 'user_id_map.csv'), header=True, inferSchema=True)
 
@@ -95,6 +68,13 @@ logging.info("Bắt đầu xử lý goodreads_books.json")
 
 df_books = spark.read.json(str(DIR / 'goodreads_books.json'))
 df_books = df_books.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
+
+df_books = df_books.drop('link', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d)[sm]/', r'$1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
+
+# Bổ sung isbn/isbn13/language/ảnh bìa từ Open Library dump, loại sách vẫn thiếu language
+df_books, enrich_stats = enrich_books(df_books, df_ol_lookup)
+logging.info(f"Giữ {enrich_stats['kept']}/{enrich_stats['total']} sách, loại {enrich_stats['dropped_missing_language']} sách thiếu language")
+kept_book_ids = df_books.select('book_id')
 
 df_book_authors_map = df_books.select(
     col('book_id'),
@@ -118,65 +98,7 @@ save_to_mysql(df_book_authors_map, 'book_authors_map')
 
 # save_to_mysql(df_book_shelves_map, 'book_shelves_map')
 
-df_books = df_books.drop('link', 'authors', 'popular_shelves', 'series').withColumn('image_url', regexp_replace(col('image_url'), r'(\d)[sm]/', r'$1l/')).withColumn('similar_books', concat_ws(',', col('similar_books')))
-df_books = df_books.withColumn(
-    'image_url',
-    when(
-        col('image_url').contains('/nophoto/'),
-        coalesce(
-            fetch_image_url_udf(col('isbn'), col('isbn13')),
-            col('image_url')
-        )
-    ).otherwise(col('image_url'))
-)
-
-mapping_dict = {
-    # Tiếng Anh
-    'eng': 'en',    # Tiếng Anh (chuẩn ISO 639-2)
-    'en-US': 'en',  # Tiếng Anh (Mỹ)
-    'en-GB': 'en',  # Tiếng Anh (Anh)
-    'en-CA': 'en',  # Tiếng Anh (Canada)
-    'en-IN': 'en',  # Tiếng Anh (Ấn Độ)
-    
-    # Tiếng Pháp
-    'fre': 'fr',    # Tiếng Pháp (chuẩn ISO 639-2/B)
-    
-    # Tiếng Tây Ban Nha
-    'spa': 'es',    # Tiếng Tây Ban Nha
-    'es-MX': 'es',  # Tiếng Tây Ban Nha (Mexico)
-    
-    # Tiếng Đức
-    'ger': 'de',    # Tiếng Đức (chuẩn ISO 639-2/B)
-    
-    # Tiếng Ý
-    'ita': 'it',    # Tiếng Ý
-    
-    # Tiếng Bồ Đào Nha
-    'por': 'pt',    # Tiếng Bồ Đào Nha
-    'pt-BR': 'pt',  # Tiếng Bồ Đào Nha (Brazil)
-    
-    # Tiếng Hà Lan
-    'dut': 'nl',    # Tiếng Hà Lan (chuẩn ISO 639-2/B)
-    'nld': 'nl',    # Tiếng Hà Lan (chuẩn ISO 639-2/T)
-    
-    # Tiếng Ba Tư (Farsi)
-    'per': 'fa',    # Tiếng Ba Tư (chuẩn ISO 639-2/B)
-    'pes': 'fa',    # Tiếng Ba Tư Tây (Iranian Persian)
-    
-    # Tiếng Trung
-    'zho': 'zh',    # Tiếng Trung (chuẩn ISO 639-2/T)
-    'chi': 'zh',    # Tiếng Trung (chuẩn ISO 639-2/B)
-}
-
-map_expr = create_map([lit(x) for x in chain(*mapping_dict.items())])
-
-df_books = df_books.withColumn(
-    'language_code',
-    when(
-        (col('language_code').isNull()) | (trim(col('language_code')).isin("", "--", "Select...", "und")),
-        'unknown'
-    ).otherwise(coalesce(map_expr[col('language_code')], col('language_code')))
-)
+df_books = df_books.drop('authors')
 
 save_to_mysql(df_books, 'books')
 
@@ -193,6 +115,7 @@ logging.info("Đã xử lý xong")
 logging.info("Bắt đầu xử lý goodreads_interactions.csv")
 
 df_interactions = spark.read.csv(str(DIR / 'goodreads_interactions.csv'), header=True, inferSchema=True)
+df_interactions = df_interactions.join(broadcast(kept_book_ids), on='book_id', how='left_semi')
 
 save_to_mysql(df_interactions, 'interactions')
 
@@ -202,6 +125,7 @@ logging.info("Bắt đầu xử lý goodreads_book_genres_initial.json")
 
 df_genres = spark.read.json(str(DIR / 'goodreads_book_genres_initial.json'))
 df_genres = df_genres.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
+df_genres = df_genres.join(broadcast(kept_book_ids), on='book_id', how='left_semi')
 
 genre_fields = df_genres.schema['genres'].dataType.fieldNames()
 map_expr = create_map([item for field in genre_fields for item in (lit(field), col(f"genres.{field}"))])
@@ -220,6 +144,7 @@ logging.info("Bắt đầu xử lý goodreads_reviews_dedup.json")
 
 df_reviews = spark.read.json(str(DIR / 'goodreads_reviews_dedup.json'))
 df_reviews = df_reviews.join(df_book_id_map, on='book_id').drop('book_id').withColumnRenamed('book_id_csv', 'book_id')
+df_reviews = df_reviews.join(broadcast(kept_book_ids), on='book_id', how='left_semi')
 df_reviews = df_reviews.join(df_user_id_map, on='user_id').drop('user_id').withColumnRenamed('user_id_csv', 'user_id')
 df_reviews = df_reviews.withColumn('review_text', trim(regexp_replace(col('review_text'), r'[\n\r]+', ' ')))
 

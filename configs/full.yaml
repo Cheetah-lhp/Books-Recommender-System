@@ -1,0 +1,60 @@
+mode: full
+seed: 42
+
+paths:
+  raw: data
+  processed: data/processed/full
+  artifacts: artifacts
+  checkpoints: checkpoints/full
+
+spark:
+  app_name: BooksRecommenderFull
+  master: local[*]
+  driver_memory: 8g
+  shuffle_partitions: 200
+
+data:
+  source: raw_goodreads
+  sample_users: null
+  min_user_positives: 5
+  split_strategy: per_user
+  generic_shelves: [to-read, read, owned, books-i-own, currently-reading]
+  max_shelves_per_book: 20
+
+signals:
+  base: 1.0
+  read: 2.0
+  reviewed: 2.0
+  rating_bonus: {"3": 1.0, "4": 2.0, "5": 3.0}
+  excluded_ratings: [1, 2]
+
+models:
+  popularity: {top_n: 500}
+  item_item: {max_history: 100, min_cooccurrence: 5, top_n: 100}
+  als:
+    rank: 64
+    max_iter: 15
+    reg_param: 0.05
+    alpha: 20.0
+    candidates: 300
+    tune:
+      enabled: false
+      ranks: [32, 64, 128]
+      reg_params: [0.01, 0.05, 0.1]
+      alphas: [10.0, 20.0, 40.0]
+  content:
+    num_features: 262144
+    min_doc_freq: 2
+    max_history: 50
+    candidates_per_tag: 500
+    candidates: 300
+    weights: {title: 2.0, description: 1.0, genres: 3.0, authors: 2.0, shelves: 1.5, language_decade: 0.5}
+  hybrid:
+    als_weight: 0.70
+    content_weight: 0.25
+    popularity_weight: 0.05
+    cold_content_weight: 0.90
+    cold_popularity_weight: 0.10
+    popularity_candidates: 100
+
+evaluation: {ks: [5, 10, 20], split: test}

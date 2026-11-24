@@ -9,6 +9,6 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY process.py .
+COPY process.py process_samples.py book_enrichment.py build_ol_lookup.py ./
 
 CMD ["python", "-u", "process.py"]

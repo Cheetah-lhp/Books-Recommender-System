@@ -27,21 +27,6 @@ export function ShelfButton({
         type="button"
         disabled={disabled}
         onClick={() => {
-          // #region agent log
-          fetch("http://127.0.0.1:7460/ingest/b819d754-3046-494d-a58c-7e31ffe6c52a", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "829bc3" },
-            body: JSON.stringify({
-              sessionId: "829bc3",
-              runId: "pre-fix",
-              hypothesisId: "B",
-              location: "ShelfButton.tsx:onClick",
-              message: "ShelfButton main click",
-              data: { status, willOpenMenu: Boolean(status), disabled: Boolean(disabled) },
-              timestamp: Date.now(),
-            }),
-          }).catch(() => {});
-          // #endregion
           if (status) {
             setOpen((v) => !v);
             return;

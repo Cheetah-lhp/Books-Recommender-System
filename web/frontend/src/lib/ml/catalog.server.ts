@@ -5,6 +5,7 @@
 
 export type CatalogBook = {
   id: string;
+  goodreads_id?: number | null;
   title: string;
   author_name: string;
   description: string | null;

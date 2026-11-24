@@ -50,6 +50,9 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-http://127.0.0.1:3000,http://localhost:3000,http://127.0.0.1:8090,http://localhost:8090}
       - SAMPLES_DIR=/app/samples_data
       - SQLITE_PATH=/app/data/books.db
+      - ML_RECOMMENDER_URL=${ML_RECOMMENDER_URL:-http://recommender:8001}
+      - ML_API_KEY=${ML_API_KEY:-}
+      - ML_RECOMMEND_TIMEOUT_SECONDS=${ML_RECOMMEND_TIMEOUT_SECONDS:-3}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
@@ -60,12 +63,34 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      recommender:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s
       timeout: 5s
       retries: 20
       start_period: 90s
+    restart: unless-stopped
+
+  recommender:
+    build:
+      context: .
+      dockerfile: model/Dockerfile
+    environment:
+      - ML_CATALOG_URL=http://backend:8000
+      - ML_API_KEY=${ML_API_KEY:-}
+    ports:
+      - "${RECOMMENDER_PORT:-8001}:8001"
+    volumes:
+      - ./demo_assets:/app/demo_assets:ro
+      - recommender_artifacts:/app/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
     restart: unless-stopped
 
   frontend:
@@ -111,6 +136,22 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  modeling:
+    build:
+      context: .
+      dockerfile: model/Dockerfile
+      args:
+        INSTALL_TRAIN: "1"
+    profiles:
+      - modeling
+    entrypoint: ["books-recommender"]
+    command: ["run-all", "--config", "configs/demo.yaml"]
+    volumes:
+      - ./configs:/app/configs:ro
+      - ./samples_data:/app/samples_data:ro
+      - ./data:/app/data
+      - recommender_artifacts:/app/artifacts
+
   similarity-worker:
     build:
       context: ./web/backend
@@ -150,3 +191,4 @@ services:
 volumes:
   mysql_data:
   backend_sqlite:
+  recommender_artifacts:

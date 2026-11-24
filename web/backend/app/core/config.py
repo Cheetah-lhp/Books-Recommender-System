@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH_PER_MIN: int = 30
     RATE_LIMIT_RECOMMEND_PER_MIN: int = 60
 
+    ML_RECOMMENDER_URL: str = "http://recommender:8001"
+    ML_API_KEY: str = ""
+    ML_RECOMMEND_TIMEOUT_SECONDS: float = 3.0
+
     model_config = SettingsConfigDict(
         env_file=str(PROJECT_DIR / ".env"),
         extra="ignore",

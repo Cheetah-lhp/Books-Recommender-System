@@ -1,0 +1,45 @@
+mode: sample
+seed: 42
+paths:
+  samples: samples_data
+  processed: data/processed/demo
+  artifacts: artifacts
+  checkpoints: checkpoints/demo
+spark:
+  app_name: BooksRecommenderDemo
+  master: local[2]
+  driver_memory: 2g
+  shuffle_partitions: 8
+data:
+  source: sample_parquet
+  sample_users: 3000
+  min_user_positives: 5
+  split_strategy: per_user
+models:
+  popularity: {top_n: 500}
+  item_item: {max_history: 100, min_cooccurrence: 5, top_n: 100}
+  als:
+    rank: 16
+    max_iter: 5
+    reg_param: 0.05
+    alpha: 20.0
+    candidates: 300
+    tune: {enabled: false}
+  content:
+    num_features: 32768
+    min_doc_freq: 2
+    max_history: 50
+    candidates_per_tag: 200
+    candidates: 300
+    weights: {title: 2.0, description: 1.0, genres: 3.0, authors: 2.0, shelves: 1.5, language_decade: 0.5}
+  hybrid:
+    als_weight: 0.70
+    content_weight: 0.25
+    popularity_weight: 0.05
+    cold_content_weight: 0.90
+    cold_popularity_weight: 0.10
+    popularity_candidates: 100
+evaluation: {ks: [5, 10, 20], split: test}
+serving:
+  enabled: true
+  max_items: 50000

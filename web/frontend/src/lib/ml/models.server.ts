@@ -1,18 +1,9 @@
 /**
- * READORA ML model registry.
+ * READORA ML model registry (server-side only).
  *
- * The project uses three separate ML models. Each one is a standalone service
- * reached over HTTP from the backend — never executed in the browser. When a
- * model URL is not configured the backend falls back to its deterministic
- * in-app heuristic so the product keeps working.
- *
- *   READORA frontend
- *        -> backend / API (server functions + /api routes)
- *              -> ML model 1: recommender      (ML_RECOMMENDER_URL)
- *              -> ML model 2: review sentiment (ML_SENTIMENT_URL)
- *              -> ML model 3: query understanding (ML_QUERY_URL)
- *        -> recommendation engine
- *   -> personalized recommendations
+ * Discover recommendations are produced by FastAPI calling the hybrid model
+ * service (ALS + TF-IDF content + popularity). Optional sentiment/query URLs
+ * remain stubs. There is no in-app heuristic recommender fallback.
  */
 
 export type MlModelKey = "recommender" | "sentiment" | "query";

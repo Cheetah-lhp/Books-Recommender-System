@@ -41,6 +41,24 @@ export function booksByCategoryQuery(slug: string) {
   });
 }
 
+export function booksByAuthorQuery(authorName: string) {
+  const name = authorName.trim();
+  return queryOptions({
+    queryKey: ["books", "author", name],
+    enabled: name.length > 0,
+    queryFn: async (): Promise<Book[]> => {
+      const params = new URLSearchParams({
+        limit: "100",
+        sort: "rating",
+        author: name,
+      });
+      const data = await apiFetch<{ data: Record<string, unknown>[] }>(`/books?${params.toString()}`);
+      return (data.data ?? []).map(normalizeBook);
+    },
+    staleTime: 3 * 60 * 1000,
+  });
+}
+
 export function searchQuery(term: string) {
   return queryOptions({
     queryKey: ["search", term],

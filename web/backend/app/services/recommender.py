@@ -1,8 +1,9 @@
-"""Heuristic recommender ported from frontend engine.server.ts — runs in FastAPI."""
+"""Hybrid recommender adapter: signals from MySQL, ranking from demo-ete models."""
 
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -16,26 +17,11 @@ from app.db.models import (
     Review,
     UserBook,
 )
+from app.services import ml_client
 from app.services.book_service import format_book
 import app.repositories.book_repo as repo
 
-THEME_TAGS: dict[str, list[str]] = {
-    "Romance": ["romance", "love", "relationships"],
-    "Adventure": ["adventure", "quest", "journey"],
-    "Mystery": ["mystery", "crime", "thriller", "detective"],
-    "Fantasy": ["fantasy", "magic", "dragons"],
-    "Sci-Fi": ["science-fiction", "sci-fi", "space"],
-    "History": ["history", "historical", "biography"],
-    "Self-help": ["self-help", "productivity", "motivation"],
-}
-
-MOOD_TAGS: dict[str, list[str]] = {
-    "Cozy": ["cozy", "comfort", "feel-good"],
-    "Dark": ["dark", "grimdark", "horror"],
-    "Uplifting": ["uplifting", "inspirational", "hope"],
-    "Thoughtful": ["literary", "philosophy", "reflective"],
-    "Exciting": ["action", "adventure", "thriller"],
-}
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -54,10 +40,6 @@ class Signals:
     liked_book_ids: list[str] = field(default_factory=list)
 
 
-def _lc(values: Optional[list[str]]) -> list[str]:
-    return [str(v).lower() for v in (values or [])]
-
-
 def _parse_tags(raw: Any) -> list[str]:
     if raw is None:
         return []
@@ -71,28 +53,6 @@ def _parse_tags(raw: Any) -> list[str]:
         except Exception:
             return [t.strip() for t in raw.split(",") if t.strip()]
     return []
-
-
-def _length_bucket(pages: Optional[int]) -> Optional[str]:
-    if not pages:
-        return None
-    if pages < 250:
-        return "short"
-    if pages <= 450:
-        return "medium"
-    return "long"
-
-
-def _preferred_bucket(pref: Optional[str]) -> Optional[str]:
-    if not pref:
-        return None
-    if pref.lower().startswith("short"):
-        return "short"
-    if pref.lower().startswith("medium"):
-        return "medium"
-    if pref.lower().startswith("long"):
-        return "long"
-    return None
 
 
 def collect_signals(db: Session, user_id: str) -> Signals:
@@ -130,115 +90,128 @@ def signals_from_answers(answers: dict[str, Any]) -> Signals:
     )
 
 
-def load_catalog(limit: int = 500) -> list[dict[str, Any]]:
-    """Load candidate books directly from DB (no internal HTTP loops)."""
+def _web_ids_from_signals(signals: Signals) -> list[str]:
+    return list(
+        dict.fromkeys(
+            [
+                *signals.favorite_book_ids,
+                *[s["book_id"] for s in signals.shelves],
+                *[r["book_id"] for r in signals.ratings],
+                *signals.liked_book_ids,
+                *signals.disliked_book_ids,
+                *signals.hidden,
+            ]
+        )
+    )
+
+
+def _resolve_id_map(web_ids: list[str]) -> dict[str, str]:
+    """Map application book IDs -> goodreads_id locally (no HTTP to self)."""
+    numeric = [int(value) for value in web_ids if str(value).isdecimal()]
+    if not numeric:
+        return {}
     db_type, conn = get_conn()
     try:
-        _total, rows = repo.get_books_paginated(conn, db_type, min(limit, 100), 0, sort="rating")
-        books = [format_book(r) for r in rows]
-        # Paginate locally up to `limit` respecting API page size rule
-        offset = 100
-        while len(books) < limit and offset < limit:
-            page_limit = min(100, limit - len(books))
-            _t, more = repo.get_books_paginated(conn, db_type, page_limit, offset, sort="rating")
-            if not more:
-                break
-            books.extend(format_book(r) for r in more)
-            offset += page_limit
-        for b in books:
-            b["tags"] = _parse_tags(b.get("tags"))
-            b["categories"] = b.get("categories") or b.get("tags") or []
-            if not isinstance(b["categories"], list):
-                b["categories"] = _parse_tags(b["categories"])
-            b["id"] = str(b.get("id"))
-        return books
+        rows = repo.get_books_batch(conn, db_type, numeric)
+    finally:
+        conn.close()
+    return {
+        str(row["id"]): str(row["goodreads_id"])
+        for row in rows
+        if row.get("goodreads_id") is not None
+    }
+
+
+def _payload_from_signals(signals: Signals, user_id: Optional[str], limit: int) -> dict[str, Any]:
+    web_ids = _web_ids_from_signals(signals)
+    return {
+        "userId": user_id,
+        "preferences": {
+            "genres": signals.genres,
+            "favorite_books": signals.favorite_book_ids,
+        },
+        "history": signals.shelves,
+        "ratings": [{"book_id": r["book_id"], "rating": r["rating"]} for r in signals.ratings],
+        "feedback": {
+            "liked": signals.liked_book_ids,
+            "disliked": signals.disliked_book_ids,
+            "hidden": signals.hidden,
+        },
+        "candidates": [],
+        "limit": limit,
+        "id_map": _resolve_id_map(web_ids),
+    }
+
+
+def _normalize_book(row: dict[str, Any]) -> dict[str, Any]:
+    book = format_book(row)
+    book["tags"] = _parse_tags(book.get("tags"))
+    book["categories"] = book.get("categories") or book.get("tags") or []
+    if not isinstance(book["categories"], list):
+        book["categories"] = _parse_tags(book["categories"])
+    book["id"] = str(book.get("id"))
+    return book
+
+
+def _hydrate_model_books(model_books: list[dict[str, Any]], id_namespace: str) -> list[dict[str, Any]]:
+    if not model_books:
+        return []
+
+    raw_ids: list[int] = []
+    for item in model_books:
+        value = str(item.get("id", ""))
+        if value.isdecimal():
+            raw_ids.append(int(value))
+
+    if not raw_ids:
+        return []
+
+    db_type, conn = get_conn()
+    try:
+        if id_namespace == "web":
+            rows = repo.get_books_batch(conn, db_type, raw_ids)
+            by_key = {str(r["id"]): r for r in rows}
+            key_of = lambda item: str(item.get("id"))
+        else:
+            rows = repo.get_books_by_goodreads_ids(conn, db_type, raw_ids)
+            by_key = {str(r["goodreads_id"]): r for r in rows if r.get("goodreads_id") is not None}
+            key_of = lambda item: str(item.get("id"))
     finally:
         conn.close()
 
-
-def score_book(book: dict[str, Any], signals: Signals, catalog: list[dict[str, Any]]) -> tuple[float, str]:
-    reasons: list[str] = []
-    score = float(book.get("rating") or 0)
-    tags = _lc(book.get("tags"))
-    cats = _lc(book.get("categories"))
-
-    genre_hits = []
-    for g in signals.genres:
-        g_l = g.lower()
-        if any(g_l in c or c in g_l for c in cats) or any(g_l in t or t in g_l for t in tags):
-            genre_hits.append(g)
-    if genre_hits:
-        score += 4 * len(genre_hits)
-        reasons.append(f"you enjoy {' and '.join(genre_hits[:2])}")
-
-    theme_hits = []
-    for theme in signals.themes:
-        theme_tags = _lc(THEME_TAGS.get(theme, [theme]))
-        if any(t in tags for t in theme_tags):
-            theme_hits.append(theme)
-    if theme_hits:
-        score += 2 * len(theme_hits)
-        reasons.append(f"you like {' and '.join(theme_hits[:2]).lower()} reads")
-
-    mood_tags = _lc(MOOD_TAGS.get(signals.mood or "", []))
-    if signals.mood and any(t in tags for t in mood_tags):
-        score += 2
-        reasons.append(f"you're looking for {signals.mood.lower()}")
-
-    pref = _preferred_bucket(signals.length)
-    bucket = _length_bucket(book.get("pages"))
-    if pref and bucket:
-        if pref == bucket:
-            score += 2
-            reasons.append(f"it's a {bucket} read, matching your preference")
-        else:
-            score -= 1.5
-
-    loved_ids = set(signals.positive_book_ids + signals.favorite_book_ids)
-    loved = [b for b in catalog if str(b.get("id")) in loved_ids]
-    for fav in loved:
-        if str(fav.get("id")) == str(book.get("id")):
+    hydrated: list[dict[str, Any]] = []
+    seen_web_ids: set[str] = set()
+    for item in model_books:
+        row = by_key.get(key_of(item))
+        if not row:
             continue
-        if fav.get("author_name") and fav.get("author_name") == book.get("author_name"):
-            score += 3
-            reasons.append(f"you liked {fav.get('title')} by the same author")
-            break
-        overlap = len(set(_lc(fav.get("tags"))) & set(tags))
-        cat_overlap = len(set(_lc(fav.get("categories"))) & set(cats))
-        if overlap + cat_overlap >= 2:
-            score += 2 + overlap * 0.5
-            reasons.append(f"it's close to {fav.get('title')}, which you rated highly")
-            break
-
-    if signals.liked_book_ids:
-        liked_tags = set()
-        for b in catalog:
-            if str(b.get("id")) in signals.liked_book_ids:
-                liked_tags.update(_lc(b.get("tags")))
-        score += len([t for t in tags if t in liked_tags])
-
-    if signals.disliked_book_ids:
-        disliked_tags = set()
-        for b in catalog:
-            if str(b.get("id")) in signals.disliked_book_ids:
-                disliked_tags.update(_lc(b.get("tags")))
-        score -= len([t for t in tags if t in disliked_tags]) * 1.5
-
-    if not signals.genres and not signals.themes:
-        score += (1 if book.get("trending_rank") else 0) + min(float(book.get("ratings_count") or 0) / 5000, 2)
-
-    why = (
-        f"You may like this because {', and '.join(reasons[:2])}."
-        if reasons
-        else f"Highly rated in the READORA library ({float(book.get('rating') or 0):.1f}★)."
-    )
-    return score, why
+        book = _normalize_book(row)
+        if book["id"] in seen_web_ids:
+            continue
+        seen_web_ids.add(book["id"])
+        hydrated.append(
+            {
+                **book,
+                "score": float(item.get("score") or 0),
+                "why": str(item.get("reason") or "Recommended by the hybrid model."),
+            }
+        )
+    return hydrated
 
 
-def _eligible(catalog: list[dict[str, Any]], signals: Signals) -> list[dict[str, Any]]:
-    read = {s["book_id"] for s in signals.shelves if s.get("status") == "read"}
-    excluded = set(signals.hidden) | set(signals.disliked_book_ids) | read
-    return [b for b in catalog if str(b.get("id")) not in excluded]
+def _rank_via_model(
+    signals: Signals,
+    user_id: Optional[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    response = ml_client.recommend_from_model(_payload_from_signals(signals, user_id, limit=max(limit, 48)))
+    if not response:
+        return []
+    books = response.get("books") or []
+    if not isinstance(books, list):
+        return []
+    namespace = str(response.get("id_namespace") or "book_id_csv")
+    return _hydrate_model_books(books, namespace)[:limit]
 
 
 def recommend(
@@ -254,36 +227,22 @@ def recommend(
     else:
         signals = Signals()
 
-    catalog = load_catalog(500)
-    if not catalog:
-        return []
-
-    pool = _eligible(catalog, signals)
-    ranked = []
-    for book in pool:
-        score, why = score_book(book, signals, catalog)
-        ranked.append({**book, "score": score, "why": why})
-    ranked.sort(key=lambda x: x["score"], reverse=True)
-    return ranked[:limit]
+    return _rank_via_model(signals, user_id, limit)
 
 
 def build_sections(db: Session, user_id: Optional[str]) -> list[dict[str, Any]]:
     signals = collect_signals(db, user_id) if user_id else Signals()
-    catalog = load_catalog(500)
-    if not catalog:
-        return []
-    pool = _eligible(catalog, signals)
-    ranked = []
-    for book in pool:
-        score, why = score_book(book, signals, catalog)
-        ranked.append({"book": book, "score": score, "why": why})
-    ranked.sort(key=lambda x: x["score"], reverse=True)
-
     has_taste = bool(
         signals.ratings or signals.genres or any(s.get("status") == "read" for s in signals.shelves)
     )
     if not has_taste:
         return []
+
+    ranked_books = _rank_via_model(signals, user_id, limit=48)
+    if not ranked_books:
+        return []
+
+    ranked = [{"book": {k: v for k, v in b.items() if k not in {"score", "why"}}, "score": b["score"], "why": b["why"]} for b in ranked_books]
 
     sections: list[dict[str, Any]] = []
     if signals.ratings or any(s.get("status") == "read" for s in signals.shelves):

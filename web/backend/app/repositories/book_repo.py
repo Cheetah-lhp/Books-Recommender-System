@@ -21,6 +21,7 @@ def get_books_paginated(
     category: Optional[List[str]] = None,
     min_rating: Optional[float] = None,
     sort: str = "rating",
+    author: Optional[str] = None,
 ) -> Tuple[int, List[Dict[str, Any]]]:
     # Truy van danh sach sach co loc va phan trang
     params = []
@@ -29,6 +30,20 @@ def get_books_paginated(
     if q:
         where_clauses.append("(title LIKE %s OR author_name LIKE %s)")
         params.extend([f"%{q}%", f"%{q}%"])
+
+    if author:
+        name = author.strip()
+        if name:
+            # Exact match or co-author lists ("A, B" / "B, A").
+            where_clauses.append(
+                "("
+                "LOWER(TRIM(author_name)) = LOWER(%s) "
+                "OR LOWER(author_name) LIKE LOWER(%s) "
+                "OR LOWER(author_name) LIKE LOWER(%s) "
+                "OR LOWER(author_name) LIKE LOWER(%s)"
+                ")"
+            )
+            params.extend([name, f"{name},%", f"%, {name}", f"%, {name},%"])
 
     if category:
         category_matches = []
@@ -151,6 +166,25 @@ def get_books_batch(conn, db_type: str, ids: List[int]) -> List[Dict[str, Any]]:
     )
     with conn.cursor() as cur:
         cur.execute(sql, ids)
+        return cur.fetchall()
+
+
+def get_books_by_goodreads_ids(conn, db_type: str, goodreads_ids: List[int]) -> List[Dict[str, Any]]:
+    """Hydrate catalog rows for hybrid-model edition IDs (book_id_csv / goodreads_id)."""
+    if not goodreads_ids:
+        return []
+    placeholders = ", ".join(["%s"] * len(goodreads_ids))
+    sql = _prepare_sql(
+        f"""
+        SELECT id, goodreads_id, title, author_name, description, cover_url,
+               isbn, isbn13, published_year, pages, language, rating,
+               ratings_count, publisher, tags, trending_rank, price
+        FROM books WHERE goodreads_id IN ({placeholders})
+        """,
+        db_type,
+    )
+    with conn.cursor() as cur:
+        cur.execute(sql, goodreads_ids)
         return cur.fetchall()
 
 def get_book_by_id(conn, db_type: str, book_id: int) -> Optional[Dict[str, Any]]:

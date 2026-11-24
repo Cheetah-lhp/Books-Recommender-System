@@ -36,21 +36,31 @@ export function BookCover({ book, className }: { book: Pick<Book, "title" | "cov
 export function BookCard({ book, className }: { book: Book; className?: string }) {
   const price = book.price && book.price > 0 ? book.price : Number((((Number(book.id) * 37) % 30) + 9.99).toFixed(2));
   return (
-    <Link
-      to="/book/$bookId"
-      params={{ bookId: book.id }}
-      className={cn("group block", className)}
-    >
-      <div className="relative">
-        <BookCover book={book} className="aspect-[2/3] w-full transition-transform group-hover:-translate-y-1" />
-        <span className="absolute bottom-2 end-2 rounded-md bg-card/90 px-1.5 py-0.5 text-[11px] font-bold text-gold backdrop-blur border border-gold/20 shadow-sm">
-          ${price.toFixed(2)}
-        </span>
-      </div>
-      <p className="mt-3 truncate text-sm font-bold text-foreground">{book.title}</p>
-      <p className="truncate text-xs text-muted-foreground">{book.author_name}</p>
-      <Rating value={book.rating} className="mt-1 text-xs" />
-    </Link>
+    <div className={cn("group block", className)}>
+      <Link to="/book/$bookId" params={{ bookId: book.id }} className="block">
+        <div className="relative">
+          <BookCover book={book} className="aspect-[2/3] w-full transition-transform group-hover:-translate-y-1" />
+          <span className="absolute bottom-2 end-2 rounded-md bg-card/90 px-1.5 py-0.5 text-[11px] font-bold text-gold backdrop-blur border border-gold/20 shadow-sm">
+            ${price.toFixed(2)}
+          </span>
+        </div>
+        <p className="mt-3 truncate text-sm font-bold text-foreground">{book.title}</p>
+      </Link>
+      {book.author_name ? (
+        <Link
+          to="/author/$authorName"
+          params={{ authorName: book.author_name }}
+          className="mt-0.5 block truncate text-xs text-muted-foreground transition-colors hover:text-gold hover:underline"
+        >
+          {book.author_name}
+        </Link>
+      ) : (
+        <p className="truncate text-xs text-muted-foreground">{book.author_name}</p>
+      )}
+      <Link to="/book/$bookId" params={{ bookId: book.id }} className="mt-1 block">
+        <Rating value={book.rating} className="text-xs" />
+      </Link>
+    </div>
   );
 }
 
