@@ -1,5 +1,8 @@
 data/
 logs/
+artifacts/
+checkpoints/
+.venv/
 .vscode/
 .env
 __pycache__/
@@ -9,3 +12,6 @@ dist/
 test.*
 .agents/
 web/.windows-host-proxy.pid
+AGENTS.md
+process/build_ol_lookup.log
+Analysis.ipynb
