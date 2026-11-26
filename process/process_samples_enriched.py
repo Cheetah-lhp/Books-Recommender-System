@@ -2,9 +2,10 @@ import os
 import sys
 from pathlib import Path
 from pyspark.sql import SparkSession, Window
+from pyspark.sql import functions as F
 from pyspark.sql.functions import count, col, when, rand, row_number, explode, regexp_replace, trim, concat_ws, lit, create_map, broadcast
 
-from book_enrichment import enrich_books, load_ol_lookup
+from book_enrichment import BOOK_SERIES_SCHEMA, book_series_pairs, enrich_books, load_ol_lookup, remap_similar_books
 
 DIR = Path(__file__).parent.parent
 DATA_DIR = DIR / 'data'
@@ -48,6 +49,9 @@ else:
     print(f"Bổ sung metadata từ Open Library dump: {enrich_stats}")
     print(f"Giữ {enrich_stats['kept']}/{enrich_stats['total']} sách, loại {enrich_stats['dropped_missing_language']} sách thiếu language")
 
+    # Loại sách nhiều ngôn ngữ trước khi lấy mẫu để vẫn đủ 10.000 sách đơn ngôn ngữ
+    df_books = df_books.filter(~(col('language_code').contains(',') | (col('language_code') == 'mul')))
+
     df_books_with_popularity = df_books.join(book_popularity, on='book_id', how='left').fillna({'interaction_count': 0})
     quantiles = df_books_with_popularity.approxQuantile('interaction_count', [i/10.0 for i in range(1, 10)], 0.01)
     bucket_expr = when(col("interaction_count") <= quantiles[0], 1)
@@ -62,14 +66,18 @@ else:
     sampled_books = df_stratified_sampled.select('book_id').distinct()
     df_books = df_books.join(broadcast(sampled_books), on='book_id')
 
+    # Đổi similar_books sang book_id csv, chỉ giữ tham chiếu tới sách trong mẫu
+    df_books = remap_similar_books(df_books, df_book_id_map, sampled_books)
+
     df_book_authors_map = df_books.select(
         col('book_id'),
         explode(col('authors')).alias('authors')
     ).select(
         col('book_id'),
         col('authors.author_id').alias('author_id'),
-        col('authors.role').alias('role')
-    )
+        # Chuẩn hóa role (Translator/translator) trước khi khử trùng; role rỗng giữ nguyên
+        F.initcap(trim(col('authors.role'))).alias('role')
+    ).dropDuplicates(['book_id', 'author_id', 'role'])
 
     df_books = df_books.drop('authors')
     df_book_authors_map.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'book_authors_map'))
@@ -93,7 +101,38 @@ if is_done('works'):
 else:
     print("Bắt đầu xử lý cho book works")
     df_works = spark.read.json(str(DATA_DIR / 'goodreads_book_works.json'))
-    df_works = df_works.join(df_book_id_map, df_works['best_book_id'] == df_book_id_map['book_id']).drop('best_book_id', 'book_id').withColumnRenamed('book_id_csv', 'best_book_id')
+    # Đổi best_book_id sang ID csv; left join để không mất work khi best_book_id ngoài map
+    df_works = df_works.join(df_book_id_map, df_works['best_book_id'] == df_book_id_map['book_id'], how='left') \
+        .drop('best_book_id', 'book_id') \
+        .withColumnRenamed('book_id_csv', 'best_book_id')
+
+    # Phạm vi catalog là 10.000 sách mẫu (đã ghi ở bước books)
+    df_editions = spark.read.parquet(str(OUTPUT_DIR / 'books')).select(
+        col('book_id').alias('_ed_book_id'),
+        col('work_id'),
+        col('ratings_count').cast('long').alias('_ed_ratings'),
+    )
+
+    # Giữ best_book_id nếu còn trong mẫu; nếu không thì điền ở dưới
+    edition_ids = df_editions.select(col('_ed_book_id').alias('_cat_id')).distinct()
+    df_works = (df_works
+        .join(edition_ids, df_works['best_book_id'] == edition_ids['_cat_id'], how='left')
+        .withColumn('_best_ok', col('_cat_id').isNotNull())
+        .drop('_cat_id'))
+
+    # Ấn bản thay thế: ratings_count cao nhất trong các ấn bản mẫu của cùng work
+    best_edition = (df_editions
+        .withColumn('_rn', F.row_number().over(
+            Window.partitionBy('work_id').orderBy(F.col('_ed_ratings').desc_nulls_last(), F.col('_ed_book_id'))))
+        .filter(col('_rn') == 1)
+        .select('work_id', col('_ed_book_id').alias('_fallback_id')))
+
+    # Inner join: bỏ work không còn ấn bản nào trong mẫu
+    df_works = (df_works
+        .join(best_edition, on='work_id', how='inner')
+        .withColumn('best_book_id', F.when(col('_best_ok'), col('best_book_id')).otherwise(col('_fallback_id')))
+        .drop('_best_ok', '_fallback_id'))
+
     df_works.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'works'))
 
 # 4. GENRES
@@ -144,12 +183,27 @@ else:
     df_authors = spark.read.json(str(DATA_DIR / 'goodreads_book_authors.json'))
     df_authors.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'authors'))
 
-# 7. SERIES
+# 7. BOOK_SERIES_MAP (độc lập với nhánh books vì cột series đã bị bỏ ở checkpoint)
+if is_done('book_series_map'):
+    print("[Checkpoint] Bảng book_series_map đã có sẵn, bỏ qua.")
+else:
+    print("Bắt đầu xử lý cho book_series_map")
+    df_book_series_src = spark.read.schema(BOOK_SERIES_SCHEMA).json(str(DATA_DIR / 'goodreads_books.json'))
+    df_book_series_map = book_series_pairs(df_book_series_src, df_book_id_map, sampled_books)
+    df_book_series_map.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'book_series_map'))
+
+# 8. SERIES (chỉ giữ dãy còn được sách mẫu tham chiếu)
 if is_done('series'):
     print("[Checkpoint] Bảng series đã có sẵn, bỏ qua.")
 else:
     print("Bắt đầu xử lý cho series")
+    df_book_series_map = spark.read.parquet(str(OUTPUT_DIR / 'book_series_map'))
+    referenced_series = df_book_series_map.select(F.col('series_id').alias('_sid')).distinct()
     df_series = spark.read.json(str(DATA_DIR / 'goodreads_book_series.json'))
+    df_series = (df_series
+        .withColumn('_sid', F.col('series_id').cast('string'))
+        .join(broadcast(referenced_series), on='_sid', how='left_semi')
+        .drop('_sid'))
     df_series.write.mode('overwrite').parquet(str(OUTPUT_DIR / 'series'))
 
 spark.stop()

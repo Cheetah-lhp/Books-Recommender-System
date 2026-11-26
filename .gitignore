@@ -5,6 +5,7 @@ checkpoints/
 .venv/
 .vscode/
 .env
+certs/
 __pycache__/
 *.pyc
 node_modules/
@@ -15,3 +16,5 @@ web/.windows-host-proxy.pid
 AGENTS.md
 process/build_ol_lookup.log
 Analysis.ipynb
+full_data/
+.cursor/

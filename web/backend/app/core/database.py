@@ -31,7 +31,11 @@ class PooledConnection:
             _mysql_pool_slots.release()
 
 def _connect_mysql():
-    # Tao ket noi moi toi MySQL
+    # Tao ket noi moi toi MySQL (kem SSL neu DB_SSL_MODE duoc bat)
+    extra = {}
+    ssl_args = settings.mysql_ssl_args
+    if ssl_args is not None:
+        extra["ssl"] = ssl_args
     return pymysql.connect(
         host=settings.DB_HOST,
         port=settings.DB_PORT,
@@ -42,6 +46,7 @@ def _connect_mysql():
         cursorclass=pymysql.cursors.DictCursor,
         autocommit=True,
         connect_timeout=settings.MYSQL_POOL_TIMEOUT_SECONDS,
+        **extra,
     )
 
 def _get_pooled_mysql_connection():
@@ -85,6 +90,8 @@ def get_conn():
     except TimeoutError as error:
         raise HTTPException(status_code=503, detail="Database connection pool is busy") from error
     except Exception:
+        if not settings.DB_ALLOW_SQLITE_FALLBACK:
+            raise
         conn = sqlite3.connect(str(settings.SQLITE_PATH), factory=CompatibleSQLiteConnection)
         conn.row_factory = sqlite3.Row
         return "sqlite", conn

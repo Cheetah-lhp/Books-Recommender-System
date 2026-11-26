@@ -48,20 +48,64 @@ def main():
     db_type, conn = get_conn()
     try:
         with conn.cursor() as cur:
-            sql = (
-                "SELECT id, tags, author_name FROM books ORDER BY ratings_count DESC LIMIT %s"
-                if db_type == "mysql"
-                else "SELECT id, tags, author_name FROM books ORDER BY ratings_count DESC LIMIT ?"
-            )
-            cur.execute(sql, (args.limit,))
-            rows = cur.fetchall()
-
-        books = []
-        for r in rows:
-            if isinstance(r, dict):
-                books.append({"id": int(r["id"]), "tags": _tags(r.get("tags")), "author": r.get("author_name")})
+            is_full = False
+            if db_type == "mysql":
+                cur.execute("SHOW COLUMNS FROM `books` LIKE 'book_id'")
+                is_full = cur.fetchone() is not None
             else:
-                books.append({"id": int(r[0]), "tags": _tags(r[1]), "author": r[2]})
+                cur.execute("PRAGMA table_info(books)")
+                cols = {r[1] if isinstance(r, tuple) else r["name"] for r in cur.fetchall()}
+                is_full = "book_id" in cols
+
+            if is_full:
+                sql = (
+                    "SELECT book_id AS id FROM books ORDER BY ratings_count DESC LIMIT %s"
+                    if db_type == "mysql"
+                    else "SELECT book_id AS id FROM books ORDER BY ratings_count DESC LIMIT ?"
+                )
+                cur.execute(sql, (args.limit,))
+                rows = cur.fetchall()
+                book_ids = [int(r["id"] if isinstance(r, dict) else r[0]) for r in rows]
+                tags_map: dict[int, list[str]] = defaultdict(list)
+                author_map: dict[int, str] = {}
+                if book_ids:
+                    ph = ", ".join(["%s" if db_type == "mysql" else "?"] * len(book_ids))
+                    cur.execute(f"SELECT book_id, genres, votes FROM genres WHERE book_id IN ({ph}) ORDER BY votes DESC", book_ids)
+                    for gr in cur.fetchall():
+                        bid = int(gr["book_id"] if isinstance(gr, dict) else gr[0])
+                        gname = gr["genres"] if isinstance(gr, dict) else gr[1]
+                        votes = gr["votes"] if isinstance(gr, dict) else gr[2]
+                        if (votes is None or votes > 0) and gname:
+                            tags_map[bid].append(str(gname))
+                    cur.execute(
+                        f"SELECT bam.book_id, a.name FROM book_authors_map bam "
+                        f"JOIN authors a ON a.author_id = bam.author_id WHERE bam.book_id IN ({ph})",
+                        book_ids,
+                    )
+                    for ar in cur.fetchall():
+                        bid = int(ar["book_id"] if isinstance(ar, dict) else ar[0])
+                        aname = ar["name"] if isinstance(ar, dict) else ar[1]
+                        if bid not in author_map and aname:
+                            author_map[bid] = str(aname)
+                books = [
+                    {"id": bid, "tags": _tags(tags_map.get(bid, [])), "author": author_map.get(bid)}
+                    for bid in book_ids
+                ]
+            else:
+                sql = (
+                    "SELECT id, tags, author_name FROM books ORDER BY ratings_count DESC LIMIT %s"
+                    if db_type == "mysql"
+                    else "SELECT id, tags, author_name FROM books ORDER BY ratings_count DESC LIMIT ?"
+                )
+                cur.execute(sql, (args.limit,))
+                rows = cur.fetchall()
+
+                books = []
+                for r in rows:
+                    if isinstance(r, dict):
+                        books.append({"id": int(r["id"]), "tags": _tags(r.get("tags")), "author": r.get("author_name")})
+                    else:
+                        books.append({"id": int(r[0]), "tags": _tags(r[1]), "author": r[2]})
 
         # Inverted index for candidate generation
         tag_index: dict[str, list[int]] = defaultdict(list)

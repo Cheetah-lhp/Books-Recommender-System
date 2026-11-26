@@ -27,10 +27,12 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    ssl_args = settings.mysql_ssl_args
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={"ssl": ssl_args} if ssl_args is not None else {},
     )
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)

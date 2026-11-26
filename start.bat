@@ -60,8 +60,8 @@ for /f "tokens=* delims= " %%i in ("%BACKEND_PORT%") do set "BACKEND_PORT=%%i"
 for /f "tokens=* delims= " %%i in ("%DOCKER_FRONTEND_PORT%") do set "DOCKER_FRONTEND_PORT=%%i"
 for /f "tokens=* delims= " %%i in ("%NGINX_PORT%") do set "NGINX_PORT=%%i"
 
-echo [1/3] Build va khoi chay MySQL, Redis, Recommender, Backend, Frontend, Nginx qua Docker...
-docker compose up -d --build --wait mysql redis recommender backend frontend nginx
+echo [1/3] Build va khoi chay Redis, Recommender, Backend, Frontend, Nginx qua Docker (MySQL dung cloud tu .env)...
+docker compose up -d --build --wait redis recommender backend frontend nginx
 if errorlevel 1 (
     echo Loi khi khoi chay Docker Compose.
     pause

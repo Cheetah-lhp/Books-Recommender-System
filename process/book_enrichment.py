@@ -17,42 +17,217 @@ IMAGE_SOURCE = os.getenv('IMAGE_SOURCE', 'dump').strip().lower()
 
 MISSING_LANGUAGE_VALUES = ('', '--', 'Select...', 'und')
 
+# ISO 639-2 (cả biến thể B và T) -> ISO 639-1. Sinh từ pycountry 26.2.16 rồi dán tĩnh
+# để Spark worker không phụ thuộc thư viện ngoài. Mã không có bản 2 chữ không nằm trong bảng.
+# scr, scc, pes: mã lỗi thời / riêng, không có trong pycountry nên bổ sung thủ công.
 LANGUAGE_MAPPING = {
-    # Tiếng Anh
-    'eng': 'en',    # Tiếng Anh (chuẩn ISO 639-2)
-    'en-US': 'en',  # Tiếng Anh (Mỹ)
-    'en-GB': 'en',  # Tiếng Anh (Anh)
-    'en-CA': 'en',  # Tiếng Anh (Canada)
-    'en-IN': 'en',  # Tiếng Anh (Ấn Độ)
-
-    # Tiếng Pháp
-    'fre': 'fr',    # Tiếng Pháp (chuẩn ISO 639-2/B)
-
-    # Tiếng Tây Ban Nha
-    'spa': 'es',    # Tiếng Tây Ban Nha
-    'es-MX': 'es',  # Tiếng Tây Ban Nha (Mexico)
-
-    # Tiếng Đức
-    'ger': 'de',    # Tiếng Đức (chuẩn ISO 639-2/B)
-
-    # Tiếng Ý
-    'ita': 'it',    # Tiếng Ý
-
-    # Tiếng Bồ Đào Nha
-    'por': 'pt',    # Tiếng Bồ Đào Nha
-    'pt-BR': 'pt',  # Tiếng Bồ Đào Nha (Brazil)
-
-    # Tiếng Hà Lan
-    'dut': 'nl',    # Tiếng Hà Lan (chuẩn ISO 639-2/B)
-    'nld': 'nl',    # Tiếng Hà Lan (chuẩn ISO 639-2/T)
-
-    # Tiếng Ba Tư (Farsi)
-    'per': 'fa',    # Tiếng Ba Tư (chuẩn ISO 639-2/B)
-    'pes': 'fa',    # Tiếng Ba Tư Tây (Iranian Persian)
-
-    # Tiếng Trung
-    'zho': 'zh',    # Tiếng Trung (chuẩn ISO 639-2/T)
-    'chi': 'zh',    # Tiếng Trung (chuẩn ISO 639-2/B)
+    'aar': 'aa',
+    'abk': 'ab',
+    'afr': 'af',
+    'aka': 'ak',
+    'alb': 'sq',
+    'amh': 'am',
+    'ara': 'ar',
+    'arg': 'an',
+    'arm': 'hy',
+    'asm': 'as',
+    'ava': 'av',
+    'ave': 'ae',
+    'aym': 'ay',
+    'aze': 'az',
+    'bak': 'ba',
+    'bam': 'bm',
+    'baq': 'eu',
+    'bel': 'be',
+    'ben': 'bn',
+    'bis': 'bi',
+    'bod': 'bo',
+    'bos': 'bs',
+    'bre': 'br',
+    'bul': 'bg',
+    'bur': 'my',
+    'cat': 'ca',
+    'ces': 'cs',
+    'cha': 'ch',
+    'che': 'ce',
+    'chi': 'zh',
+    'chu': 'cu',
+    'chv': 'cv',
+    'cor': 'kw',
+    'cos': 'co',
+    'cre': 'cr',
+    'cym': 'cy',
+    'cze': 'cs',
+    'dan': 'da',
+    'deu': 'de',
+    'div': 'dv',
+    'dut': 'nl',
+    'dzo': 'dz',
+    'ell': 'el',
+    'eng': 'en',
+    'epo': 'eo',
+    'est': 'et',
+    'eus': 'eu',
+    'ewe': 'ee',
+    'fao': 'fo',
+    'fas': 'fa',
+    'fij': 'fj',
+    'fin': 'fi',
+    'fra': 'fr',
+    'fre': 'fr',
+    'fry': 'fy',
+    'ful': 'ff',
+    'geo': 'ka',
+    'ger': 'de',
+    'gla': 'gd',
+    'gle': 'ga',
+    'glg': 'gl',
+    'glv': 'gv',
+    'gre': 'el',
+    'grn': 'gn',
+    'guj': 'gu',
+    'hat': 'ht',
+    'hau': 'ha',
+    'hbs': 'sh',
+    'heb': 'he',
+    'her': 'hz',
+    'hin': 'hi',
+    'hmo': 'ho',
+    'hrv': 'hr',
+    'hun': 'hu',
+    'hye': 'hy',
+    'ibo': 'ig',
+    'ice': 'is',
+    'ido': 'io',
+    'iii': 'ii',
+    'iku': 'iu',
+    'ile': 'ie',
+    'ina': 'ia',
+    'ind': 'id',
+    'ipk': 'ik',
+    'isl': 'is',
+    'ita': 'it',
+    'jav': 'jv',
+    'jpn': 'ja',
+    'kal': 'kl',
+    'kan': 'kn',
+    'kas': 'ks',
+    'kat': 'ka',
+    'kau': 'kr',
+    'kaz': 'kk',
+    'khm': 'km',
+    'kik': 'ki',
+    'kin': 'rw',
+    'kir': 'ky',
+    'kom': 'kv',
+    'kon': 'kg',
+    'kor': 'ko',
+    'kua': 'kj',
+    'kur': 'ku',
+    'lao': 'lo',
+    'lat': 'la',
+    'lav': 'lv',
+    'lim': 'li',
+    'lin': 'ln',
+    'lit': 'lt',
+    'ltz': 'lb',
+    'lub': 'lu',
+    'lug': 'lg',
+    'mac': 'mk',
+    'mah': 'mh',
+    'mal': 'ml',
+    'mao': 'mi',
+    'mar': 'mr',
+    'may': 'ms',
+    'mkd': 'mk',
+    'mlg': 'mg',
+    'mlt': 'mt',
+    'mon': 'mn',
+    'mri': 'mi',
+    'msa': 'ms',
+    'mya': 'my',
+    'nau': 'na',
+    'nav': 'nv',
+    'nbl': 'nr',
+    'nde': 'nd',
+    'ndo': 'ng',
+    'nep': 'ne',
+    'nld': 'nl',
+    'nno': 'nn',
+    'nob': 'nb',
+    'nor': 'no',
+    'nya': 'ny',
+    'oci': 'oc',
+    'oji': 'oj',
+    'ori': 'or',
+    'orm': 'om',
+    'oss': 'os',
+    'pan': 'pa',
+    'per': 'fa',
+    'pes': 'fa',  # thủ công
+    'pli': 'pi',
+    'pol': 'pl',
+    'por': 'pt',
+    'pus': 'ps',
+    'que': 'qu',
+    'roh': 'rm',
+    'ron': 'ro',
+    'rum': 'ro',
+    'run': 'rn',
+    'rus': 'ru',
+    'sag': 'sg',
+    'san': 'sa',
+    'scc': 'sr',  # thủ công
+    'scr': 'hr',  # thủ công
+    'sin': 'si',
+    'slk': 'sk',
+    'slo': 'sk',
+    'slv': 'sl',
+    'sme': 'se',
+    'smo': 'sm',
+    'sna': 'sn',
+    'snd': 'sd',
+    'som': 'so',
+    'sot': 'st',
+    'spa': 'es',
+    'sqi': 'sq',
+    'srd': 'sc',
+    'srp': 'sr',
+    'ssw': 'ss',
+    'sun': 'su',
+    'swa': 'sw',
+    'swe': 'sv',
+    'tah': 'ty',
+    'tam': 'ta',
+    'tat': 'tt',
+    'tel': 'te',
+    'tgk': 'tg',
+    'tgl': 'tl',
+    'tha': 'th',
+    'tib': 'bo',
+    'tir': 'ti',
+    'ton': 'to',
+    'tsn': 'tn',
+    'tso': 'ts',
+    'tuk': 'tk',
+    'tur': 'tr',
+    'twi': 'tw',
+    'uig': 'ug',
+    'ukr': 'uk',
+    'urd': 'ur',
+    'uzb': 'uz',
+    'ven': 've',
+    'vie': 'vi',
+    'vol': 'vo',
+    'wel': 'cy',
+    'wln': 'wa',
+    'wol': 'wo',
+    'xho': 'xh',
+    'yid': 'yi',
+    'yor': 'yo',
+    'zha': 'za',
+    'zho': 'zh',
+    'zul': 'zu',
 }
 
 
@@ -127,11 +302,15 @@ def is_missing_language(value):
 
 
 def normalize_language_code(value):
-    """Áp mapping cho một mã language có sẵn; giá trị thiếu trả về None."""
+    """Đưa một mã ngôn ngữ về ISO 639-1 (2 chữ) nếu có; mã không có bản 2 chữ giữ nguyên 3 chữ.
+
+    Bỏ biến thể vùng ('en-US' -> 'en') và đổi về chữ thường. Giá trị thiếu trả về None.
+    Idempotent: áp lại trên mã đã chuẩn hóa cho kết quả giống hệt.
+    """
     if is_missing_language(value):
         return None
-    value = str(value).strip()
-    return LANGUAGE_MAPPING.get(value, value)
+    code = str(value).strip().lower().replace('_', '-').split('-')[0]
+    return LANGUAGE_MAPPING.get(code, code)
 
 
 def normalize_languages(codes):
@@ -303,3 +482,64 @@ def enrich_books(df_books, df_lookup, image_source=None):
     flag_cols = ['_need_isbn', '_need_isbn13', '_need_lang', '_need_cover', '_f_isbn', '_f_isbn13', '_f_lang', '_f_cover']
     df_kept = df.filter(F.col('language_code').isNotNull()).drop(*flag_cols)
     return df_kept, stats
+
+
+# Schema tối thiểu để đọc goodreads_books.json: chỉ cần book_id và series (mảng series_id).
+# Dạng DDL để truyền thẳng vào spark.read.schema(), tránh suy luận schema trên file ~9 GB.
+BOOK_SERIES_SCHEMA = 'book_id string, series array<string>'
+
+
+def book_series_pairs(df_books_src, df_book_id_map, kept_book_ids):
+    """Cặp (book_id csv, series_id) từ cột series của sách, chỉ giữ sách trong kept_book_ids.
+
+    df_books_src đọc bằng BOOK_SERIES_SCHEMA. Cột series là mảng ID Goodreads của dãy sách.
+    Sách không có trong df_book_id_map bị bỏ. Cặp trùng được khử.
+    """
+    from pyspark.sql import functions as F
+
+    id_map = df_book_id_map.select(
+        F.col('book_id').cast('string').alias('_gr_id'),
+        F.col('book_id_csv').alias('book_id'),
+    )
+    return (df_books_src
+        .select(F.col('book_id').cast('string').alias('_gr_id'), F.explode(F.col('series')).alias('series_id'))
+        .join(id_map, on='_gr_id', how='inner')
+        .join(kept_book_ids.select('book_id'), on='book_id', how='left_semi')
+        .select('book_id', F.col('series_id').cast('string').alias('series_id'))
+        .dropDuplicates(['book_id', 'series_id']))
+
+
+def remap_similar_books(df_books, df_book_id_map, kept_book_ids):
+    """Đổi cột similar_books từ ID Goodreads sang book_id csv, chỉ giữ các sách còn trong kept_book_ids.
+
+    similar_books là chuỗi ID Goodreads nối bằng dấu phẩy. Giữ nguyên thứ tự gốc (posexplode + sort theo pos).
+    df_book_id_map có cột book_id_csv và book_id (ID Goodreads). Trả về df_books với cột similar_books đã đổi.
+    Sách không còn tham chiếu hợp lệ nào nhận chuỗi rỗng.
+    """
+    from pyspark.sql import functions as F
+
+    id_map = df_book_id_map.select(
+        F.col('book_id').cast('string').alias('_gr_id'),
+        F.col('book_id_csv').cast('long').alias('_similar_id'),
+    )
+    kept = kept_book_ids.select(F.col('book_id').alias('_similar_id'))
+
+    refs = (df_books
+        .select('book_id', 'similar_books')
+        .filter(F.col('similar_books').isNotNull() & (F.trim(F.col('similar_books')) != ''))
+        .select('book_id', F.posexplode(F.split(F.col('similar_books'), ',')).alias('pos', '_raw'))
+        .select('book_id', 'pos', F.trim(F.col('_raw')).alias('_gr_id'))
+        .filter(F.col('_gr_id') != '')
+        .join(id_map, on='_gr_id', how='inner')
+        .join(kept, on='_similar_id', how='left_semi'))
+
+    remapped = (refs
+        .groupBy('book_id')
+        .agg(F.array_sort(F.collect_list(F.struct('pos', '_similar_id'))).alias('_items'))
+        .select('book_id', F.concat_ws(',', F.transform('_items', lambda x: x['_similar_id'].cast('string')))
+                .alias('_similar_new')))
+
+    return (df_books
+        .join(remapped, on='book_id', how='left')
+        .withColumn('similar_books', F.coalesce(F.col('_similar_new'), F.lit('')))
+        .drop('_similar_new'))

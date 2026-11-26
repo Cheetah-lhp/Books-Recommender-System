@@ -216,11 +216,11 @@ if [ "${1:-}" = "-f" ] || [ "${1:-}" = "--follow" ] || [ "${1:-}" = "-l" ] || [ 
     FOLLOW_LOGS=1
 fi
 
-echo "[1/3] Build va khoi chay MySQL, Redis, Recommender, Backend, Frontend, Nginx qua Docker..."
+echo "[1/3] Build va khoi chay Redis, Recommender, Backend, Frontend, Nginx qua Docker (MySQL dung cloud tu .env)..."
 if "${COMPOSE_CMD[@]}" up --help < /dev/null 2>/dev/null | grep -q -- '--wait'; then
-    "${COMPOSE_CMD[@]}" up -d --build --wait mysql redis recommender backend frontend nginx < /dev/null
+    "${COMPOSE_CMD[@]}" up -d --build --wait redis recommender backend frontend nginx < /dev/null
 else
-    "${COMPOSE_CMD[@]}" up -d --build mysql redis recommender backend frontend nginx < /dev/null
+    "${COMPOSE_CMD[@]}" up -d --build redis recommender backend frontend nginx < /dev/null
     echo "Dang cho cac service san sang..."
     READY=0
     for _ in $(seq 1 90); do

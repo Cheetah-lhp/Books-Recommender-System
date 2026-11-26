@@ -58,7 +58,7 @@ class UserRole(Base):
 
 
 class Review(Base):
-    __tablename__ = "reviews"
+    __tablename__ = "user_reviews"
     __table_args__ = (UniqueConstraint("user_id", "book_id", name="uq_user_book_review"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

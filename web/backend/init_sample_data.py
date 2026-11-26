@@ -24,8 +24,20 @@ if DB_HOST == "mysql" and not _running_in_docker():
     DB_HOST = "127.0.0.1"
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_USER = os.getenv("DB_USER", "root")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "Namle123456")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_NAME = os.getenv("DB_NAME") or os.getenv("WEB_DB_NAME") or "goodreads_web"
+DB_SSL_MODE = os.getenv("DB_SSL_MODE", "").strip().upper()
+DB_SSL_CA = os.getenv("DB_SSL_CA", "").strip()
+DB_ALLOW_SQLITE_FALLBACK = os.getenv("DB_ALLOW_SQLITE_FALLBACK", "false").strip().lower() in ("1", "true", "yes")
+
+
+def _mysql_ssl_args():
+    """Tham so `ssl` cho pymysql (None neu khong bat SSL)."""
+    if DB_SSL_MODE in ("", "DISABLED", "DISABLE", "OFF"):
+        return None
+    if DB_SSL_CA:
+        return {"ca": DB_SSL_CA, "check_hostname": DB_SSL_MODE == "VERIFY_IDENTITY"}
+    return {}
 SQLITE_PATH = Path(os.getenv("SQLITE_PATH", str(BASE_DIR / "books.db")))
 SAMPLES_DIR = Path(os.getenv("SAMPLES_DIR", str(PROJECT_DIR / "samples_data")))
 
@@ -34,19 +46,26 @@ def get_db_connection():
     """Ket noi MySQL uu tien, fallback sang SQLite neu MySQL khong kha dung."""
     try:
         import pymysql
+        extra = {}
+        ssl_args = _mysql_ssl_args()
+        if ssl_args is not None:
+            extra["ssl"] = ssl_args
         conn = pymysql.connect(
             host=DB_HOST,
             port=DB_PORT,
             user=DB_USER,
             password=DB_PASSWORD,
             charset="utf8mb4",
-            autocommit=True
+            autocommit=True,
+            **extra,
         )
         with conn.cursor() as cur:
             cur.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
         conn.select_db(DB_NAME)
         return "mysql", conn
     except Exception as e:
+        if not DB_ALLOW_SQLITE_FALLBACK:
+            raise
         import sqlite3
         print(f"[Init Data] Canh bao: Khong ket noi duoc MySQL ({DB_HOST}:{DB_PORT}): {e}. Fallback sang SQLite...")
         SQLITE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -55,9 +74,28 @@ def get_db_connection():
         return "sqlite", conn
 
 
+def _is_full_goodreads_schema(db_type, cur) -> bool:
+    """Tra ve True neu bang books dung schema Goodreads day du (co cot book_id)."""
+    if db_type == "mysql":
+        cur.execute("SHOW TABLES LIKE 'books'")
+        if not cur.fetchone():
+            return False
+        cur.execute("SHOW COLUMNS FROM `books` LIKE 'book_id'")
+        return cur.fetchone() is not None
+    cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='books'")
+    if not cur.fetchone():
+        return False
+    cur.execute("PRAGMA table_info(books)")
+    cols = {r[1] if isinstance(r, tuple) else r["name"] for r in cur.fetchall()}
+    return "book_id" in cols
+
+
 def init_schema(db_type, conn):
     """Khoi tao schema bang books va book_categories."""
     cur = conn.cursor()
+    if _is_full_goodreads_schema(db_type, cur):
+        print("[Init Data] Phat hien schema Goodreads day du (books.book_id) - bo qua init schema mau.")
+        return
     if db_type == "mysql":
         cur.execute("""
             CREATE TABLE IF NOT EXISTS books (
@@ -220,6 +258,11 @@ def repair_genre_mappings(db_type, conn, sample_dir):
 def import_samples():
     """Nap du lieu tu samples_data vao CSDL neu chua co hoac khi co co --force."""
     db_type, conn = get_db_connection()
+    with conn.cursor() as check_cur:
+        if _is_full_goodreads_schema(db_type, check_cur):
+            print("[Init Data] Dang dung CSDL Goodreads day du - bo qua nap du lieu mau.")
+            conn.close()
+            return
     init_schema(db_type, conn)
 
     force = "--force" in sys.argv or "-f" in sys.argv
@@ -380,6 +423,15 @@ def import_samples():
 
 def import_sample_reviews():
     """Add the sample review text to its own table; never rewrite Parquet inputs."""
+    db_type_chk, conn_chk = get_db_connection()
+    try:
+        with conn_chk.cursor() as cur_chk:
+            if _is_full_goodreads_schema(db_type_chk, cur_chk):
+                print("[Init Data] Dang dung bang reviews Goodreads day du - bo qua nap sample_reviews.")
+                return
+    finally:
+        conn_chk.close()
+
     sample_dir = SAMPLES_DIR
     reviews_dir = sample_dir / "reviews"
     if not reviews_dir.exists():

@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import quote_plus
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -14,6 +15,12 @@ class Settings(BaseSettings):
     DB_USER: str = "root"
     DB_PASSWORD: str = "change-me"
     DB_NAME: str = "goodreads_web"
+    # SSL cho MySQL cloud (Aiven). Rong = khong bat SSL. REQUIRED = ma hoa, khong verify cert.
+    # VERIFY_CA / VERIFY_IDENTITY can DB_SSL_CA tro toi file ca.pem.
+    DB_SSL_MODE: str = ""
+    DB_SSL_CA: str = ""
+    # Chi fallback sang SQLite khi MySQL loi neu bat co nay (mac dinh tat).
+    DB_ALLOW_SQLITE_FALLBACK: bool = False
     MYSQL_POOL_SIZE: int = 10
     MYSQL_POOL_TIMEOUT_SECONDS: int = 5
     TRENDING_CACHE_TTL_SECONDS: int = 60
@@ -50,9 +57,22 @@ class Settings(BaseSettings):
     @property
     def sqlalchemy_url(self) -> str:
         return (
-            f"mysql+pymysql://{self.DB_USER}:{self.DB_PASSWORD}"
+            f"mysql+pymysql://{quote_plus(self.DB_USER)}:{quote_plus(self.DB_PASSWORD)}"
             f"@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}?charset=utf8mb4"
         )
+
+    @property
+    def mysql_ssl_args(self) -> dict | None:
+        """Tham so `ssl` cho pymysql; None neu khong bat SSL."""
+        mode = self.DB_SSL_MODE.strip().upper()
+        if mode in ("", "DISABLED", "DISABLE", "OFF"):
+            return None
+        if self.DB_SSL_CA.strip():
+            return {
+                "ca": self.DB_SSL_CA.strip(),
+                "check_hostname": mode == "VERIFY_IDENTITY",
+            }
+        return {}
 
 settings = Settings()
 if settings.DB_HOST == "mysql" and not _running_in_docker():

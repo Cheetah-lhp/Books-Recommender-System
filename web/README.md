@@ -42,7 +42,8 @@ Management commands:
 - **App (Windows / WSL2 with Host Proxy):** `http://127.0.0.1:3000` 
 - **App (Linux / direct Nginx 1-origin):** `http://127.0.0.1:8090`
 - **Backend API & Docs:** `http://127.0.0.1:8000` / `http://127.0.0.1:8000/docs`
-- **Direct Ports:** Frontend container `:3001`, MySQL `:3307`, Redis `:6379`
+- **Direct Ports:** Frontend container `:3001`, Redis `:6379`
+- **MySQL:** dùng cloud (Aiven) cấu hình trong `.env` (`DB_HOST`, `DB_PORT`, `DB_SSL_MODE=REQUIRED`), không còn container MySQL local. Nạp parquet: `python scripts/load_parquet_to_cloud.py --source all` (dùng `--dry-run` để xem trước).
 
 ## Notes
 
